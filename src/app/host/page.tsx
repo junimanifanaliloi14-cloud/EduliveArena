@@ -1,7 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 interface Bank { id: string; name: string; subject: string; questionCount: number; }
 
@@ -14,12 +16,22 @@ export default function HostHome() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  // State untuk Import
+  const [isImporting, setIsImporting] = useState(false);
+  const [newBankName, setNewBankName] = useState('');
+  const [parsedQuestions, setParsedQuestions] = useState<any[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
+    fetchBanks();
+  }, []);
+
+  function fetchBanks() {
     fetch('/api/banks').then(r => r.json()).then(d => {
       setBanks(d.banks);
-      if (d.banks[0]) setSelected(d.banks[0].id);
+      if (d.banks.length > 0 && !selected) setSelected(d.banks[0].id);
     });
-  }, []);
+  }
 
   async function createSession() {
     if (!selected) return;
@@ -33,16 +45,133 @@ export default function HostHome() {
     else setLoading(false);
   }
 
+  // Fungsi untuk memproses data mentah (dari CSV atau Excel)
+  function processQuestions(rawData: any[]) {
+    const questions = rawData.map((row: any, index: number) => {
+      // Normalisasi key (ubah ke huruf kecil dan ganti spasi jadi underscore)
+      const normalizedRow: any = {};
+      Object.keys(row).forEach(k => {
+        normalizedRow[k.toLowerCase().replace(/\s+/g, '_')] = row[k];
+      });
+
+      const answerStr = (normalizedRow.jawaban || 'A').toString().toUpperCase();
+      const correctMap: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+      
+      return {
+        id: 'q_' + (index + 1),
+        text: normalizedRow.soal || 'Soal tanpa teks',
+        options: [
+          normalizedRow.opsi_a || normalizedRow.a || '-',
+          normalizedRow.opsi_b || normalizedRow.b || '-',
+          normalizedRow.opsi_c || normalizedRow.c || '-',
+          normalizedRow.opsi_d || normalizedRow.d || '-',
+        ],
+        correctIndex: correctMap[answerStr] !== undefined ? correctMap[answerStr] : 0,
+        timeLimitSec: 20
+      };
+    }).filter(q => q.text !== 'Soal tanpa teks'); // Buang baris kosong
+
+    if (questions.length === 0) {
+      alert('File kosong atau format kolom tidak sesuai. Pastikan ada kolom: soal, opsi_a, opsi_b, opsi_c, opsi_d, jawaban.');
+      return;
+    }
+    
+    setParsedQuestions(questions);
+    if (!newBankName) setNewBankName('Bank Soal Import - ' + new Date().toLocaleDateString());
+  }
+
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+    if (isExcel) {
+      // Baca Excel menggunakan SheetJS
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        processQuestions(data);
+      };
+      reader.readAsBinaryString(file);
+    } else {
+      // Baca CSV menggunakan PapaParse
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => processQuestions(results.data),
+        error: (error) => alert('Gagal membaca CSV: ' + error.message)
+      });
+    }
+  }
+
+  async function saveImportedBank() {
+    if (parsedQuestions.length === 0 || !newBankName.trim()) return;
+    setLoading(true);
+    
+    const res = await fetch('/api/banks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        name: newBankName, 
+        subject: 'Umum', 
+        questions: parsedQuestions 
+      }),
+    });
+    
+    if (res.ok) {
+      setIsImporting(false);
+      setParsedQuestions([]);
+      setNewBankName('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      fetchBanks();
+      alert('Bank soal berhasil disimpan!');
+    } else {
+      alert('Gagal menyimpan bank soal.');
+    }
+    setLoading(false);
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-6">
+      <div className="mb-6 flex justify-between items-center">
         <Link href="/" className="text-sm text-slate-400 hover:text-white transition">
           ← Kembali ke Beranda
         </Link>
+        <button onClick={() => setIsImporting(!isImporting)} className="text-sm text-brand-500 hover:text-brand-400 font-semibold">
+          {isImporting ? 'Batal Import' : '+ Import Soal (Excel/CSV)'}
+        </button>
       </div>
 
       <h1 className="text-3xl font-bold">Dashboard Guru</h1>
       <p className="text-slate-400 mt-1">Pilih bank soal dan atur durasi kuis live.</p>
+
+      {isImporting && (
+        <div className="card mt-6 border-brand-500/50 bg-brand-500/5 animate-slide-up">
+          <h2 className="font-semibold text-lg mb-2">Import Soal (Excel / CSV)</h2>
+          <p className="text-xs text-slate-400 mb-4">
+            Format kolom (baris pertama): <code>soal, opsi_a, opsi_b, opsi_c, opsi_d, jawaban</code> (jawaban isi A/B/C/D).
+          </p>
+          
+          <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} ref={fileInputRef}
+            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-brand-500 file:text-white hover:file:bg-brand-600 mb-4" />
+          
+          {parsedQuestions.length > 0 && (
+            <div className="space-y-3">
+              <div className="text-sm text-emerald-400">✓ {parsedQuestions.length} soal berhasil dibaca.</div>
+              <input value={newBankName} onChange={e => setNewBankName(e.target.value)} 
+                placeholder="Nama Bank Soal Baru" 
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500" />
+              <button onClick={saveImportedBank} disabled={loading} className="btn-primary w-full">
+                {loading ? 'Menyimpan...' : 'Simpan Bank Soal'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card mt-8 space-y-5">
         <div>
@@ -78,6 +207,7 @@ export default function HostHome() {
         <div>
           <label className="block text-sm text-slate-400 mb-2">Pilih bank soal</label>
           <div className="grid gap-2">
+            {banks.length === 0 && <div className="text-slate-500 text-sm">Belum ada bank soal. Silakan import Excel/CSV.</div>}
             {banks.map(b => (
               <button key={b.id} onClick={() => setSelected(b.id)}
                 className={'flex items-center justify-between rounded-xl px-4 py-3 border transition ' + (selected === b.id ? 'border-brand-500 bg-brand-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10')}>
@@ -90,7 +220,7 @@ export default function HostHome() {
             ))}
           </div>
         </div>
-        <button onClick={createSession} disabled={loading} className="btn-primary w-full">
+        <button onClick={createSession} disabled={loading || !selected} className="btn-primary w-full">
           {loading ? 'Membuat sesi...' : 'Mulai Sesi Baru →'}
         </button>
       </div>

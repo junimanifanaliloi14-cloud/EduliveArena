@@ -3,6 +3,7 @@ import { useSessionSocket } from '@/lib/useSocket';
 import { use, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function ControlPanel({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -63,14 +64,24 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
         </div>
       </header>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="card">
-          <div className="text-sm text-slate-400 mb-1">Link murid</div>
-          <a href={playUrl} target="_blank" className="text-brand-500 break-all text-sm hover:underline">{playUrl}</a>
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="card md:col-span-2 flex flex-col justify-between">
+          <div>
+            <div className="text-sm text-slate-400 mb-1">Link murid</div>
+            <a href={playUrl} target="_blank" className="text-brand-500 break-all text-sm hover:underline">{playUrl}</a>
+          </div>
+          <div className="mt-4 pt-4 border-t border-white/10">
+            <div className="text-sm text-slate-400 mb-1">Overlay OBS (Browser Source)</div>
+            <a href={overlayUrl} target="_blank" className="text-brand-500 break-all text-sm hover:underline">{overlayUrl}</a>
+          </div>
         </div>
-        <div className="card">
-          <div className="text-sm text-slate-400 mb-1">Overlay OBS (Browser Source)</div>
-          <a href={overlayUrl} target="_blank" className="text-brand-500 break-all text-sm hover:underline">{overlayUrl}</a>
+
+        {/* KOTAK QR CODE */}
+        <div className="card flex flex-col items-center justify-center text-center">
+          <div className="text-sm text-slate-400 mb-3">Scan untuk Join</div>
+          <div className="bg-white p-2 rounded-xl">
+            <QRCodeSVG value={playUrl} size={120} />
+          </div>
         </div>
       </div>
 
@@ -182,7 +193,6 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   );
 }
 
-// KOMPONEN LEADERBOARD DENGAN ANIMASI
 function LeaderboardMini({ rows }: { rows: any[] }) {
   if (!rows.length) return <div className="text-slate-500 text-sm">Belum ada pemain.</div>;
   return (
