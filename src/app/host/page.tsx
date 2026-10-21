@@ -5,7 +5,10 @@ import Link from 'next/link';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
-interface Bank { id: string; name: string; subject: string; questionCount: number; }
+interface Bank { 
+  id: string; name: string; subject: string; questionCount: number;
+  questions?: { id: string; text: string }[];
+}
 
 export default function HostHome() {
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -15,6 +18,7 @@ export default function HostHome() {
   const [autoReveal, setAutoReveal] = useState(true);
   const [teamMode, setTeamMode] = useState(false);
   const [eliminationMode, setEliminationMode] = useState(false);
+  const [bossQuestions, setBossQuestions] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -37,11 +41,17 @@ export default function HostHome() {
     setLoading(true);
     const res = await fetch('/api/sessions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bankId: selected, hostName, timeLimitSec: timeLimit, autoReveal, teamMode, eliminationMode }),
+      body: JSON.stringify({ bankId: selected, hostName, timeLimitSec: timeLimit, autoReveal, teamMode, eliminationMode, bossQuestions }),
     });
     const data = await res.json();
     if (data.session) router.push('/host/session/' + data.session.id);
     else setLoading(false);
+  }
+
+  function toggleBossQuestion(index: number) {
+    setBossQuestions(prev => 
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+    );
   }
 
   function processQuestions(rawData: any[]) {
@@ -95,6 +105,8 @@ export default function HostHome() {
     } else alert('Gagal menyimpan bank soal.');
     setLoading(false);
   }
+
+  const selectedBank = banks.find(b => b.id === selected);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
@@ -169,6 +181,30 @@ export default function HostHome() {
             ))}
           </div>
         </div>
+
+        {/* PILIHAN BOSS BATTLE */}
+        {selectedBank && selectedBank.questions && (
+          <div className="border-t border-white/10 pt-4 mt-2">
+            <label className="block text-sm text-slate-400 mb-2">Pilih Soal Boss Battle (Poin 3x Lipat)</label>
+            <div className="grid gap-2 max-h-60 overflow-y-auto pr-2">
+              {selectedBank.questions.map((q, i) => (
+                <label key={i} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${bossQuestions.includes(i) ? 'border-rose-500/50 bg-rose-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
+                  <input 
+                    type="checkbox" 
+                    checked={bossQuestions.includes(i)}
+                    onChange={() => toggleBossQuestion(i)}
+                    className="mt-1 h-4 w-4 rounded bg-slate-800 border-white/20 text-rose-500 focus:ring-rose-500 cursor-pointer"
+                  />
+                  <div>
+                    <div className="text-xs text-slate-400">Soal {i + 1}</div>
+                    <div className="text-sm font-medium">{q.text}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button onClick={createSession} disabled={loading || !selected} className="btn-primary w-full">{loading ? 'Membuat sesi...' : 'Mulai Sesi Baru →'}</button>
       </div>
     </main>

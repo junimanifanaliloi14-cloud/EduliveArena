@@ -30,8 +30,10 @@ class Store {
   }
 
   listBanks() {
+    // Kembalikan data bank beserta soal-soalnya untuk keperluan UI Guru
     return Array.from(this.banks.values()).map(b => ({
       id: b.id, name: b.name, subject: b.subject, questionCount: b.questions.length, createdAt: b.createdAt,
+      questions: b.questions.map(q => ({ id: q.id, text: q.text })) 
     }));
   }
   getBank(id) { return this.banks.get(id); }
@@ -41,7 +43,7 @@ class Store {
     return bank;
   }
 
-  createSession({ bankId, hostName, timeLimitSec, autoReveal = true, teamMode = false, eliminationMode = false }) {
+  createSession({ bankId, hostName, timeLimitSec, autoReveal = true, teamMode = false, eliminationMode = false, bossQuestions = [] }) {
     const bank = this.banks.get(bankId);
     if (!bank) throw new Error('Bank tidak ditemukan');
     const session = {
@@ -51,6 +53,7 @@ class Store {
       autoReveal: autoReveal,
       teamMode: teamMode,
       eliminationMode: eliminationMode,
+      bossQuestions: bossQuestions, // Array indeks soal Boss Battle
       currentQuestionIndex: -1, questionState: 'idle',
       questionStartAt: null, questionEndAt: null,
       isPaused: false, pauseStartAt: null,
@@ -296,13 +299,12 @@ class Store {
 
     let finalPoints = result.points;
     
-    // FITUR BARU: Boss Battle Poin 3x di soal terakhir
-    const isBossBattle = s.currentQuestionIndex === bank.questions.length - 1;
+    // Boss Battle 3x (Mengecek dari array pilihan guru)
+    const isBossBattle = s.bossQuestions.includes(s.currentQuestionIndex);
     if (correct && isBossBattle) {
       finalPoints = finalPoints * 3;
     }
 
-    // Terapkan penggandaan power-up
     if (p.activeDouble) {
       finalPoints = finalPoints * 2;
     }
@@ -326,7 +328,7 @@ class Store {
     if (!s) return null;
     const bank = this.banks.get(s.bankId);
     const q = s.currentQuestionIndex >= 0 ? bank.questions[s.currentQuestionIndex] : null;
-    const isBossBattle = s.currentQuestionIndex === bank.questions.length - 1;
+    const isBossBattle = s.bossQuestions.includes(s.currentQuestionIndex);
 
     const leaderboard = Array.from(s.players.values())
       .sort((a, b) => b.score - a.score).slice(0, 20)
@@ -361,7 +363,7 @@ class Store {
         teamMode: s.teamMode, teamScores: s.teamMode ? teamScores : null,
         eliminationMode: s.eliminationMode,
         isPaused: s.isPaused, pauseStartAt: s.pauseStartAt,
-        isBossBattle: isBossBattle, // FITUR BARU
+        isBossBattle: isBossBattle,
         questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now(),
       },
       question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: s.timeLimitSec, correctIndex: revealCorrect } : null,
