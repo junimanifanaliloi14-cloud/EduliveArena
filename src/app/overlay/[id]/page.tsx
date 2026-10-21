@@ -66,39 +66,47 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
           
           {q ? (
             <>
-              <div className="text-center mt-4 flex-1 flex items-center justify-center">
-                <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3 mt-6">
-                {q.options.map((o, i) => {
-                  const revealed = s.questionState === 'revealed';
-                  const isCorrect = revealed && q.correctIndex === i;
-                  const stat = state.answerStats.byChoice[i];
-                  const pct = state.answerStats.total ? Math.round((stat / state.answerStats.total) * 100) : 0;
-                  return (
-                    <div key={i} className={'relative rounded-2xl border px-4 py-3 overflow-hidden ' + (isCorrect ? 'border-emerald-500 bg-emerald-500/20' : 'border-white/15 bg-white/5')}>
-                      <div className="absolute inset-y-0 left-0 bg-brand-500/20" style={{ width: revealed ? pct + '%' : '0%', transition: 'width .4s' }} />
-                      <div className="relative flex items-center gap-3">
-                        <span className="h-8 w-8 grid place-items-center rounded-lg bg-brand-500/30 font-mono font-bold">{String.fromCharCode(65 + i)}</span>
-                        <span className="text-lg">{o}</span>
-                        {revealed && <span className="ml-auto text-sm text-slate-300">{stat}</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              {/* TAMPILAN SAAT PERSIAPAN: Sembunyikan Soal, Tampilkan Countdown Raksasa */}
+              {isPreparing ? (
+                <div className="flex-1 flex flex-col items-center justify-center animate-pop">
+                  <div className="text-9xl font-bold text-white drop-shadow-lg">{prepareLeft}</div>
+                  <div className="text-2xl text-slate-400 mt-4 tracking-widest uppercase">Bersiap...</div>
+                </div>
+              ) : (
+                /* TAMPILAN SAAT SOAL AKTIF */
+                <div className="flex-1 flex flex-col animate-slide-up">
+                  <div className="text-center mt-4 flex-1 flex items-center justify-center">
+                    <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 mt-6">
+                    {q.options.map((o, i) => {
+                      const revealed = s.questionState === 'revealed';
+                      const isCorrect = revealed && q.correctIndex === i;
+                      const stat = state.answerStats.byChoice[i];
+                      const pct = state.answerStats.total ? Math.round((stat / state.answerStats.total) * 100) : 0;
+                      return (
+                        <div key={i} className={'relative rounded-2xl border px-4 py-3 overflow-hidden ' + (isCorrect ? 'border-emerald-500 bg-emerald-500/20' : 'border-white/15 bg-white/5')}>
+                          <div className="absolute inset-y-0 left-0 bg-brand-500/20" style={{ width: revealed ? pct + '%' : '0%', transition: 'width .4s' }} />
+                          <div className="relative flex items-center gap-3">
+                            <span className="h-8 w-8 grid place-items-center rounded-lg bg-brand-500/30 font-mono font-bold">{String.fromCharCode(65 + i)}</span>
+                            <span className="text-lg">{o}</span>
+                            {revealed && <span className="ml-auto text-sm text-slate-300">{stat}</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
+              {/* TIMER BAWAH (Hanya muncul saat soal aktif) */}
               <div className="mt-6 h-10 flex items-center justify-center">
-                {s.questionState === 'showing' && (
-                  isPreparing ? (
-                    <div className="text-2xl font-mono font-bold text-amber-400 animate-pulse">Bersiap... {prepareLeft}</div>
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <div className={`h-3 w-3 rounded-full animate-pulse ${answerLeft <= 5 ? 'bg-red-500' : 'bg-brand-500'}`} />
-                      <span className={`text-3xl font-mono font-bold ${answerLeft <= 5 ? 'text-red-500' : 'text-white'}`}>{answerLeft}s</span>
-                    </div>
-                  )
+                {s.questionState === 'showing' && !isPreparing && (
+                  <div className="flex items-center gap-3 animate-pop">
+                    <div className={`h-3 w-3 rounded-full animate-pulse ${answerLeft <= 5 ? 'bg-red-500' : 'bg-brand-500'}`} />
+                    <span className={`text-3xl font-mono font-bold ${answerLeft <= 5 ? 'text-red-500' : 'text-white'}`}>{answerLeft}s</span>
+                  </div>
                 )}
               </div>
             </>
@@ -115,7 +123,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
         <div className="card flex flex-col">
           <div className="text-xs uppercase tracking-wider text-slate-400 mb-3">Leaderboard</div>
           
-          {/* ANIMASI LEADERBOARD */}
           <motion.ol className="flex flex-col gap-1.5 relative">
             <AnimatePresence>
               {state.leaderboard.slice(0, 10).map(r => (
