@@ -5,8 +5,8 @@ import { Server } from 'socket.io';
 import { store } from './src/lib/store.mjs';
 
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = '0.0.0.0';
-const port = parseInt(process.env.PORT || '3000', 10);
+const hostname = process.env.HOSTNAME || '0.0.0.0';
+const port = parseInt(process.env.PORT || process.env.SERVER_PORT || '3000', 10);
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -33,7 +33,7 @@ io.on('connection', (socket) => {
       if (session.status === 'ended') return ack?.({ ok: false, error: 'Sesi telah berakhir' });
       const player = store.joinSession(session.id, name);
       socket.join(`session:${session.id}`);
-      socket.join(`player:${player.id}`); // Room pribadi untuk menerima pesan kick
+      socket.join(`player:${player.id}`);
       socket.data.sessionId = session.id;
       socket.data.playerId = player.id;
       io.to(`session:${session.id}`).emit('session:state', store.getPublicState(session.id));
@@ -51,6 +51,17 @@ io.on('connection', (socket) => {
       socket.emit('player:state', store.getPlayerState(sessionId, playerId));
       ack?.({ ok: true, ...result });
     } catch (e) { ack?.({ ok: false, error: e.message }); }
+  });
+
+  // EVENT BARU: Terima emoji dari murid, teruskan ke OBS
+  socket.on('player:emoji', ({ emoji }) => {
+    const { sessionId } = socket.data;
+    if (sessionId) {
+      io.to(`session:${sessionId}`).emit('overlay:emoji', { 
+        emoji, 
+        id: Date.now() + Math.random() // ID unik untuk animasi
+      });
+    }
   });
 
   socket.on('player:refresh', () => {

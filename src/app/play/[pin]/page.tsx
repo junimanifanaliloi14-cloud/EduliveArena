@@ -18,6 +18,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [submitting, setSubmitting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [finalReport, setFinalReport] = useState<any>(null);
+  const [lastEmojiTime, setLastEmojiTime] = useState(0);
 
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
@@ -59,11 +60,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
     socket.on('session:state', (s: PublicState) => setState(s));
-    
-    // Tangkap laporan akhir untuk melihat badge
-    socket.on('session:ended', (report: any) => {
-      setFinalReport(report);
-    });
+    socket.on('session:ended', (report: any) => setFinalReport(report));
 
     socket.on('player:state', (ps: any) => {
       if (!ps) return;
@@ -97,6 +94,14 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       if (!res?.ok) setError(res?.error || 'Gagal menjawab');
       else socketRef.current?.emit('player:refresh');
     });
+  }
+
+  function sendEmoji(emoji: string) {
+    if (!socketRef.current) return;
+    // Cooldown 2 detik agar tidak spam
+    if (Date.now() - lastEmojiTime < 2000) return;
+    setLastEmojiTime(Date.now());
+    socketRef.current.emit('player:emoji', { emoji });
   }
 
   if (kicked) {
@@ -145,7 +150,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const myFinalData = finalReport?.players?.find((p: any) => p.id === myPlayer?.id);
 
   return (
-    <main className="min-h-screen px-4 py-6 max-w-md mx-auto">
+    <main className="min-h-screen px-4 py-6 max-w-md mx-auto relative pb-24">
       <header className="flex items-center justify-between mb-4">
         <div>
           <div className="text-xs text-slate-400">Halo,</div>
@@ -168,7 +173,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <h2 className="text-xl font-semibold mt-2">Sesi selesai</h2>
           <p className="text-slate-400 text-sm mt-1 mb-4">Skor akhir: <span className="text-brand-500 font-mono font-bold text-lg">{myPlayer?.score}</span></p>
           
-          {/* TAMPILAN BADGE MURID */}
           {myFinalData && myFinalData.badges.length > 0 && (
             <div className="bg-white/5 rounded-xl p-4 mt-4">
               <div className="text-xs text-slate-400 uppercase tracking-widest mb-3">Pencapaianmu</div>
@@ -268,6 +272,18 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
               </li>
             ))}
           </ol>
+        </div>
+      )}
+
+      {/* PANEL EMOJI (Fixed di bawah) */}
+      {state?.session.status !== 'ended' && (
+        <div className="fixed bottom-0 left-0 right-0 p-3 bg-slate-900/90 backdrop-blur border-t border-white/10 flex justify-center gap-4 z-50">
+          {['👏', '😂', '😮', '🔥', '💯'].map(emoji => (
+            <button key={emoji} onClick={() => sendEmoji(emoji)}
+              className="text-3xl hover:scale-125 transition-transform active:scale-90">
+              {emoji}
+            </button>
+          ))}
         </div>
       )}
     </main>

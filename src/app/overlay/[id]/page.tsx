@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, use } from 'react';
 import { initAudio, playCorrect } from '@/lib/sound';
 import { motion, AnimatePresence } from 'framer-motion';
 
+interface FloatingEmoji { id: number; emoji: string; x: number; }
+
 export default function Overlay({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { state } = useSessionSocket(id);
@@ -11,6 +13,7 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
   const lastQuestionRef = useRef<string>('');
+  const [emojis, setEmojis] = useState<FloatingEmoji[]>([]);
 
   useEffect(() => {
     const unlockAudio = () => initAudio();
@@ -43,6 +46,29 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
     }
   }, [state?.session.questionState, state?.session.currentQuestionIndex]);
 
+  // Efek Emoji Melayang
+  useEffect(() => {
+    const socket = (window as any).__socket_conn || null; // fallback
+    // Kita menggunakan socket yang sama dari useSessionSocket
+    // Tapi karena useSessionSocket tidak mengekspos socket secara global, kita perlu membuat listener manual di sini.
+    // (Sebenarnya lebih baik jika useSessionSocket mengembalikan socket, tapi kita akali dengan import io)
+    import('socket.io-client').then(({ io }) => {
+      const s = io({ path: '/socket.io', transports: ['websocket', 'polling'] });
+      s.emit('host:subscribe', { sessionId: id }); // Supaya masuk ke room
+      
+      s.on('overlay:emoji', ({ emoji, id: emojiId }) => {
+        const xPos = Math.random() * 80 + 10; // Posisi X acak antara 10% - 90%
+        setEmojis(prev => [...prev, { id: emojiId, emoji, x: xPos }]);
+        
+        // Hapus dari state setelah 3 detik agar memori tidak penuh
+        setTimeout(() => {
+          setEmojis(prev => prev.filter(e => e.id !== emojiId));
+        }, 3000);
+      });
+      return () => s.disconnect();
+    });
+  }, [id]);
+
   if (!state) return null;
   const s = state.session;
   const q = state.question;
@@ -56,8 +82,29 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const isPreparing = prepareLeft > 0;
 
   return (
-    <div className="min-h-screen p-6 bg-transparent">
-      <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5">
+    <div className="min-h-screen p-6 bg-transparent relative overflow-hidden">
+      
+      {/* LAYER EMOJI MELAYANG */}
+      <div className="fixed inset-0 pointer-events-none z-50">
+        <AnimatePresence>
+          {emojis.map(e => (
+            <motion.div
+              key={e.id}
+              initial={{ opacity: 1, y: '100vh', scale: 1 }}
+              animate={{ opacity: 0, y: '-10vh', scale: 1.5 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 3, ease: 'easeOut' }}
+              className="absolute text-6xl"
+              style={{ left: `${e.x}%` }}
+            >
+              {e.emoji}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
+      {/* KONTEN UTAMA */}
+      <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
         <div className="col-span-2 card min-h-[380px] flex flex-col relative overflow-hidden">
           <div className="flex items-center justify-between text-xs text-slate-400 uppercase tracking-wider">
             <span>{s.bankName}</span>
@@ -66,14 +113,12 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
           
           {q ? (
             <>
-              {/* TAMPILAN SAAT PERSIAPAN: Sembunyikan Soal, Tampilkan Countdown Raksasa */}
               {isPreparing ? (
                 <div className="flex-1 flex flex-col items-center justify-center animate-pop">
                   <div className="text-9xl font-bold text-white drop-shadow-lg">{prepareLeft}</div>
                   <div className="text-2xl text-slate-400 mt-4 tracking-widest uppercase">Bersiap...</div>
                 </div>
               ) : (
-                /* TAMPILAN SAAT SOAL AKTIF */
                 <div className="flex-1 flex flex-col animate-slide-up">
                   <div className="text-center mt-4 flex-1 flex items-center justify-center">
                     <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
@@ -100,7 +145,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                 </div>
               )}
 
-              {/* TIMER BAWAH (Hanya muncul saat soal aktif) */}
               <div className="mt-6 h-10 flex items-center justify-center">
                 {s.questionState === 'showing' && !isPreparing && (
                   <div className="flex items-center gap-3 animate-pop">
