@@ -30,7 +30,6 @@ class Store {
   }
 
   listBanks() {
-    // Kembalikan data bank beserta soal-soalnya untuk keperluan UI Guru
     return Array.from(this.banks.values()).map(b => ({
       id: b.id, name: b.name, subject: b.subject, questionCount: b.questions.length, createdAt: b.createdAt,
       questions: b.questions.map(q => ({ id: q.id, text: q.text })) 
@@ -43,7 +42,7 @@ class Store {
     return bank;
   }
 
-  createSession({ bankId, hostName, timeLimitSec, autoReveal = true, teamMode = false, eliminationMode = false, bossQuestions = [] }) {
+  createSession({ bankId, hostName, timeLimitSec, autoReveal = true, teamMode = false, eliminationMode = false, bossQuestions = [], shuffleOptions = false }) {
     const bank = this.banks.get(bankId);
     if (!bank) throw new Error('Bank tidak ditemukan');
     const session = {
@@ -53,8 +52,10 @@ class Store {
       autoReveal: autoReveal,
       teamMode: teamMode,
       eliminationMode: eliminationMode,
-      bossQuestions: bossQuestions, // Array indeks soal Boss Battle
+      bossQuestions: bossQuestions,
+      shuffleOptions: shuffleOptions,
       currentQuestionIndex: -1, questionState: 'idle',
+      currentQ: null, // Menyimpan salinan soal yang mungkin sudah diacak
       questionStartAt: null, questionEndAt: null,
       isPaused: false, pauseStartAt: null,
       players: new Map(), currentAnswers: new Map(),
@@ -93,9 +94,23 @@ class Store {
     s.questionState = 'showing';
     s.isPaused = false;
     s.pauseStartAt = null;
-    const q = bank.questions[s.currentQuestionIndex];
-    const timeLimit = s.timeLimitSec || q.timeLimitSec || 20;
     
+    const rawQ = bank.questions[s.currentQuestionIndex];
+    const timeLimit = s.timeLimitSec || rawQ.timeLimitSec || 20;
+    
+    // FITUR BARU: Acak Opsi
+    if (s.shuffleOptions) {
+      const optionsWithIndex = rawQ.options.map((opt, idx) => ({ opt, isCorrect: idx === rawQ.correctIndex }));
+      optionsWithIndex.sort(() => Math.random() - 0.5);
+      s.currentQ = {
+        ...rawQ,
+        options: optionsWithIndex.map(o => o.opt),
+        correctIndex: optionsWithIndex.findIndex(o => o.isCorrect)
+      };
+    } else {
+      s.currentQ = { ...rawQ };
+    }
+
     s.questionStartAt = Date.now() + 3000; 
     s.questionEndAt = s.questionStartAt + (timeLimit * 1000);
     s.currentAnswers.clear();
@@ -192,12 +207,10 @@ class Store {
       p.activeDouble = false;
     }
 
-    const bank = this.banks.get(s.bankId);
-    const q = bank.questions[s.currentQuestionIndex];
     const wrongCount = totalPlayers - correctCount;
     s.questionStats[s.currentQuestionIndex] = {
       index: s.currentQuestionIndex,
-      text: q.text,
+      text: s.currentQ.text,
       total: totalPlayers,
       correct: correctCount,
       wrong: wrongCount,
@@ -260,9 +273,7 @@ class Store {
     if (type === 'fifty') {
       if (p.powerups.fifty <= 0) throw new Error('Kuota 50:50 habis');
       p.powerups.fifty--;
-      const bank = this.banks.get(s.bankId);
-      const q = bank.questions[s.currentQuestionIndex];
-      const wrongIndices = [0,1,2,3].filter(i => i !== q.correctIndex);
+      const wrongIndices = [0,1,2,3].filter(i => i !== s.currentQ.correctIndex);
       wrongIndices.sort(() => Math.random() - 0.5);
       return { ok: true, hidden: wrongIndices.slice(0, 2) };
     } 
@@ -290,16 +301,13 @@ class Store {
     if (p.isEliminated) throw new Error('Anda sudah tereliminasi');
     if (s.currentAnswers.has(playerId)) throw new Error('Sudah menjawab');
 
-    const bank = this.banks.get(s.bankId);
-    const q = bank.questions[s.currentQuestionIndex];
-    const correct = Number(choice) === q.correctIndex;
+    const correct = Number(choice) === s.currentQ.correctIndex;
     const timeUsed = Date.now() - s.questionStartAt;
     const timeLimit = s.questionEndAt - s.questionStartAt;
     const result = this._score({ correct, timeUsed, timeLimit, streak: p.streak });
 
     let finalPoints = result.points;
     
-    // Boss Battle 3x (Mengecek dari array pilihan guru)
     const isBossBattle = s.bossQuestions.includes(s.currentQuestionIndex);
     if (correct && isBossBattle) {
       finalPoints = finalPoints * 3;
@@ -327,7 +335,7 @@ class Store {
     const s = this.sessions.get(sessionId);
     if (!s) return null;
     const bank = this.banks.get(s.bankId);
-    const q = s.currentQuestionIndex >= 0 ? bank.questions[s.currentQuestionIndex] : null;
+    const q = s.currentQ;
     const isBossBattle = s.bossQuestions.includes(s.currentQuestionIndex);
 
     const leaderboard = Array.from(s.players.values())

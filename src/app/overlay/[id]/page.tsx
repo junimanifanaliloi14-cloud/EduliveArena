@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, use } from 'react';
 import { initAudio, playCorrect } from '@/lib/sound';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface FloatingEmoji { id: number; emoji: string; x: number; }
 
@@ -69,6 +70,12 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
   const isPreparing = prepareLeft > 0;
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const playUrl = origin + '/play/' + s.pin;
+
+  // LAYAR LOBBY (Jika belum mulai)
+  const isLobby = s.questionState === 'idle' && s.currentQuestionIndex < 0;
+
   return (
     <div className="min-h-screen p-6 bg-transparent relative overflow-hidden">
       
@@ -92,123 +99,168 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
         </AnimatePresence>
       </div>
 
-      <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
-        <div className="col-span-2 card min-h-[380px] flex flex-row relative overflow-hidden">
-          
-          <div className="w-24 flex flex-col items-center justify-start pt-6 border-r border-white/10 pr-4 mr-4">
-            <div className="relative">
-              <div className={`absolute -inset-1 rounded-full blur opacity-75 animate-pulse ${s.isBossBattle ? 'bg-gradient-to-r from-red-600 to-orange-500' : 'bg-gradient-to-r from-brand-500 to-amber-500'}`}></div>
-              <div className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">{s.isBossBattle ? '😈' : '👩‍🏫'}</div>
+      {isLobby ? (
+        /* ================= TAMPILAN LOBBY ================= */
+        <div className="max-w-6xl mx-auto grid grid-cols-3 gap-8 relative z-10 items-center min-h-[80vh] animate-pop">
+          <div className="col-span-2 flex flex-col justify-center">
+            <div className="text-brand-500 font-bold tracking-widest uppercase text-sm mb-2">Live Quiz Session</div>
+            <h1 className="text-6xl font-black leading-tight mb-4">{s.bankName}</h1>
+            <p className="text-2xl text-slate-300 mb-8">Bersama: <span className="text-white font-semibold">{s.hostName}</span></p>
+            
+            <div className="flex items-center gap-6">
+              <div className="card bg-white/10 border-white/20 p-4 rounded-2xl flex flex-col items-center">
+                <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">PIN Kuis</div>
+                <div className="text-5xl font-mono font-bold text-brand-500 tracking-widest">{s.pin}</div>
+              </div>
+              <div className="text-slate-400 text-sm">atau scan QR Code di samping →</div>
             </div>
-            <div className="text-[10px] text-center text-slate-400 mt-3 uppercase tracking-widest font-bold">{s.isBossBattle ? 'BOSS' : 'Guru'}</div>
           </div>
 
-          <div className="flex-1 flex flex-col">
-            {s.teamMode && s.teamScores && (
-              <div className="flex gap-4 mb-4 bg-slate-800/80 p-3 rounded-xl border border-white/10 shadow-lg animate-slide-up">
-                <div className="flex-1 bg-red-500/20 border border-red-500/30 rounded-lg p-2 flex items-center justify-between"><span className="font-bold text-red-400 text-lg">TIM MERAH</span><span className="font-mono text-2xl font-bold text-white">{s.teamScores.A}</span></div>
-                <div className="flex items-center text-slate-500 font-bold italic">VS</div>
-                <div className="flex-1 bg-blue-500/20 border border-blue-500/30 rounded-lg p-2 flex items-center justify-between"><span className="font-bold text-blue-400 text-lg">TIM BIRU</span><span className="font-mono text-2xl font-bold text-white">{s.teamScores.B}</span></div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-xs text-slate-400 uppercase tracking-wider">
-              <span>{s.bankName}</span>
-              <span>Soal {s.currentQuestionIndex + 1} / {s.totalQuestions}</span>
+          <div className="col-span-1 flex flex-col items-center">
+            <div className="bg-white p-4 rounded-3xl shadow-2xl mb-6">
+              <QRCodeSVG value={playUrl} size={200} />
             </div>
+            <div className="text-xl font-bold mb-4 text-center">Scan untuk Join</div>
             
-            {q ? (
-              <>
-                {isPreparing ? (
-                  <div className="flex-1 flex flex-col items-center justify-center animate-pop">
-                    <div className="text-9xl font-bold text-white drop-shadow-lg">{prepareLeft}</div>
-                    <div className="text-2xl text-slate-400 mt-4 tracking-widest uppercase">Bersiap...</div>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col animate-slide-up relative">
-                    
-                    {s.isPaused && (
-                      <div className="absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center border-2 border-amber-500/50 animate-pop">
-                        <div className="text-6xl mb-4">⏸️</div>
-                        <div className="text-3xl font-bold text-amber-400 tracking-widest uppercase">PAUSED</div>
-                      </div>
-                    )}
+            <div className="w-full card bg-white/5">
+              <div className="text-xs text-slate-400 uppercase tracking-wider mb-2 text-center">Peserta Bergabung ({state.allPlayers.length})</div>
+              <div className="h-40 overflow-y-auto flex flex-wrap gap-2 justify-center content-start">
+                <AnimatePresence>
+                  {state.allPlayers.map(p => (
+                    <motion.div 
+                      key={p.id} 
+                      initial={{ opacity: 0, scale: 0.5 }} 
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-white/10 px-3 py-1.5 rounded-full text-sm font-medium animate-pop"
+                    >
+                      {p.name}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ================= TAMPILAN KUIS UTAMA ================= */
+        <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
+          <div className="col-span-2 card min-h-[380px] flex flex-row relative overflow-hidden">
+            
+            <div className="w-24 flex flex-col items-center justify-start pt-6 border-r border-white/10 pr-4 mr-4">
+              <div className="relative">
+                <div className={`absolute -inset-1 rounded-full blur opacity-75 animate-pulse ${s.isBossBattle ? 'bg-gradient-to-r from-red-600 to-orange-500' : 'bg-gradient-to-r from-brand-500 to-amber-500'}`}></div>
+                <div className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">{s.isBossBattle ? '😈' : '👩‍🏫'}</div>
+              </div>
+              <div className="text-[10px] text-center text-slate-400 mt-3 uppercase tracking-widest font-bold">{s.isBossBattle ? 'BOSS' : 'Guru'}</div>
+            </div>
 
-                    {s.isBossBattle && (
-                      <div className="text-center mb-2 animate-pulse">
-                        <span className="inline-block bg-gradient-to-r from-red-600 to-amber-600 text-white font-black px-6 py-1.5 rounded-full text-lg uppercase tracking-widest shadow-[0_0_20px_rgba(220,38,38,0.8)] border border-red-400">
-                          🔥 BOSS BATTLE - 3x POIN! 🔥
-                        </span>
-                      </div>
-                    )}
+            <div className="flex-1 flex flex-col">
+              {s.teamMode && s.teamScores && (
+                <div className="flex gap-4 mb-4 bg-slate-800/80 p-3 rounded-xl border border-white/10 shadow-lg animate-slide-up">
+                  <div className="flex-1 bg-red-500/20 border border-red-500/30 rounded-lg p-2 flex items-center justify-between"><span className="font-bold text-red-400 text-lg">TIM MERAH</span><span className="font-mono text-2xl font-bold text-white">{s.teamScores.A}</span></div>
+                  <div className="flex items-center text-slate-500 font-bold italic">VS</div>
+                  <div className="flex-1 bg-blue-500/20 border border-blue-500/30 rounded-lg p-2 flex items-center justify-between"><span className="font-bold text-blue-400 text-lg">TIM BIRU</span><span className="font-mono text-2xl font-bold text-white">{s.teamScores.B}</span></div>
+                </div>
+              )}
 
-                    <div className="text-center mt-2 flex-1 flex items-center justify-center">
-                      <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
+              <div className="flex items-center justify-between text-xs text-slate-400 uppercase tracking-wider">
+                <span>{s.bankName}</span>
+                <span>Soal {s.currentQuestionIndex + 1} / {s.totalQuestions}</span>
+              </div>
+              
+              {q ? (
+                <>
+                  {isPreparing ? (
+                    <div className="flex-1 flex flex-col items-center justify-center animate-pop">
+                      <div className="text-9xl font-bold text-white drop-shadow-lg">{prepareLeft}</div>
+                      <div className="text-2xl text-slate-400 mt-4 tracking-widest uppercase">Bersiap...</div>
                     </div>
-                    
-                    <div className="grid grid-cols-2 gap-3 mt-6">
-                      {q.options.map((o, i) => {
-                        const revealed = s.questionState === 'revealed';
-                        const isCorrect = revealed && q.correctIndex === i;
-                        const stat = state.answerStats.byChoice[i];
-                        const pct = state.answerStats.total ? Math.round((stat / state.answerStats.total) * 100) : 0;
-                        return (
-                          <div key={i} className={'relative rounded-2xl border px-4 py-3 overflow-hidden ' + (isCorrect ? 'border-emerald-500 bg-emerald-500/20' : 'border-white/15 bg-white/5')}>
-                            <div className="absolute inset-y-0 left-0 bg-brand-500/20" style={{ width: revealed ? pct + '%' : '0%', transition: 'width .4s' }} />
-                            <div className="relative flex items-center gap-3">
-                              <span className="h-8 w-8 grid place-items-center rounded-lg bg-brand-500/30 font-mono font-bold">{String.fromCharCode(65 + i)}</span>
-                              <span className="text-lg">{o}</span>
-                              {revealed && <span className="ml-auto text-sm text-slate-300">{stat}</span>}
+                  ) : (
+                    <div className="flex-1 flex flex-col animate-slide-up relative">
+                      
+                      {s.isPaused && (
+                        <div className="absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center border-2 border-amber-500/50 animate-pop">
+                          <div className="text-6xl mb-4">⏸️</div>
+                          <div className="text-3xl font-bold text-amber-400 tracking-widest uppercase">PAUSED</div>
+                        </div>
+                      )}
+
+                      {s.isBossBattle && (
+                        <div className="text-center mb-2 animate-pulse">
+                          <span className="inline-block bg-gradient-to-r from-red-600 to-amber-600 text-white font-black px-6 py-1.5 rounded-full text-lg uppercase tracking-widest shadow-[0_0_20px_rgba(220,38,38,0.8)] border border-red-400">
+                            🔥 BOSS BATTLE - 3x POIN! 🔥
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="text-center mt-2 flex-1 flex items-center justify-center">
+                        <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3 mt-6">
+                        {q.options.map((o, i) => {
+                          const revealed = s.questionState === 'revealed';
+                          const isCorrect = revealed && q.correctIndex === i;
+                          const stat = state.answerStats.byChoice[i];
+                          const pct = state.answerStats.total ? Math.round((stat / state.answerStats.total) * 100) : 0;
+                          return (
+                            <div key={i} className={'relative rounded-2xl border px-4 py-3 overflow-hidden ' + (isCorrect ? 'border-emerald-500 bg-emerald-500/20' : 'border-white/15 bg-white/5')}>
+                              <div className="absolute inset-y-0 left-0 bg-brand-500/20" style={{ width: revealed ? pct + '%' : '0%', transition: 'width .4s' }} />
+                              <div className="relative flex items-center gap-3">
+                                <span className="h-8 w-8 grid place-items-center rounded-lg bg-brand-500/30 font-mono font-bold">{String.fromCharCode(65 + i)}</span>
+                                <span className="text-lg">{o}</span>
+                                {revealed && <span className="ml-auto text-sm text-slate-300">{stat}</span>}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-6 h-10 flex items-center justify-center">
-                  {s.questionState === 'showing' && !isPreparing && (
-                    <div className="flex items-center gap-3 animate-pop">
-                      <div className={`h-3 w-3 rounded-full ${s.isPaused ? 'bg-amber-500' : (answerLeft <= 5 ? 'bg-red-500 animate-pulse' : 'bg-brand-500 animate-pulse')}`} />
-                      <span className={`text-3xl font-mono font-bold ${s.isPaused ? 'text-amber-500' : (answerLeft <= 5 ? 'text-red-500' : 'text-white')}`}>{s.isPaused ? 'PAUSED' : `${answerLeft}s`}</span>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
+
+                  <div className="mt-6 h-10 flex items-center justify-center">
+                    {s.questionState === 'showing' && !isPreparing && (
+                      <div className="flex items-center gap-3 animate-pop">
+                        <div className={`h-3 w-3 rounded-full ${s.isPaused ? 'bg-amber-500' : (answerLeft <= 5 ? 'bg-red-500 animate-pulse' : 'bg-brand-500 animate-pulse')}`} />
+                        <span className={`text-3xl font-mono font-bold ${s.isPaused ? 'text-amber-500' : (answerLeft <= 5 ? 'text-red-500' : 'text-white')}`}>{s.isPaused ? 'PAUSED' : `${answerLeft}s`}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 grid place-items-center text-slate-400">
+                  <div className="text-center"><div className="text-6xl mb-3">🎓</div><p className="text-xl">Menunggu soal berikutnya...</p></div>
                 </div>
-              </>
-            ) : (
-              <div className="flex-1 grid place-items-center text-slate-400">
-                <div className="text-center"><div className="text-6xl mb-3">🎓</div><p className="text-xl">Menunggu soal berikutnya...</p></div>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
+
+          <div className="card flex flex-col">
+            <div className="text-xs uppercase tracking-wider text-slate-400 mb-3">Leaderboard</div>
+            
+            <motion.ol className="flex flex-col gap-1.5 relative">
+              <AnimatePresence>
+                {state.leaderboard.slice(0, 10).map(r => (
+                  <motion.li layout key={r.id} initial={{ opacity: 0, scale: 0.8, y: -20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                    className={'flex items-center justify-between rounded-lg px-3 py-2 text-sm ' + (r.isEliminated ? 'bg-red-950/20 opacity-60' : (r.rank === 1 ? 'bg-brand-500/20 border border-brand-500/40' : 'bg-white/5'))}>
+                    <span className="flex items-center gap-2">
+                      <span className="w-5 text-center font-mono font-bold text-brand-500">{r.rank}</span>
+                      <span className="font-medium">{r.name}</span>
+                      {r.isEliminated && <span title="Tereliminasi">💀</span>}
+                      {s.teamMode && <span className={`text-[10px] font-bold ${r.team === 'A' ? 'text-red-400' : 'text-blue-400'}`}>{r.team === 'A' ? 'M' : 'B'}</span>}
+                      {r.rank === 1 && !r.isEliminated && <span className="text-amber-400">👑</span>}
+                    </span>
+                    <span className="font-mono text-slate-200">{r.score}</span>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+              {!state.leaderboard.length && <li className="text-slate-500 text-sm">Belum ada pemain...</li>}
+            </motion.ol>
+
+            <div className="mt-auto pt-4 border-t border-white/10 text-xs text-slate-400">PIN: <span className="font-mono text-brand-500">{s.pin}</span> - {state.playerCount} murid</div>
           </div>
         </div>
-
-        <div className="card flex flex-col">
-          <div className="text-xs uppercase tracking-wider text-slate-400 mb-3">Leaderboard</div>
-          
-          <motion.ol className="flex flex-col gap-1.5 relative">
-            <AnimatePresence>
-              {state.leaderboard.slice(0, 10).map(r => (
-                <motion.li layout key={r.id} initial={{ opacity: 0, scale: 0.8, y: -20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                  className={'flex items-center justify-between rounded-lg px-3 py-2 text-sm ' + (r.isEliminated ? 'bg-red-950/20 opacity-60' : (r.rank === 1 ? 'bg-brand-500/20 border border-brand-500/40' : 'bg-white/5'))}>
-                  <span className="flex items-center gap-2">
-                    <span className="w-5 text-center font-mono font-bold text-brand-500">{r.rank}</span>
-                    <span className="font-medium">{r.name}</span>
-                    {r.isEliminated && <span title="Tereliminasi">💀</span>}
-                    {s.teamMode && <span className={`text-[10px] font-bold ${r.team === 'A' ? 'text-red-400' : 'text-blue-400'}`}>{r.team === 'A' ? 'M' : 'B'}</span>}
-                    {r.rank === 1 && !r.isEliminated && <span className="text-amber-400">👑</span>}
-                  </span>
-                  <span className="font-mono text-slate-200">{r.score}</span>
-                </motion.li>
-              ))}
-            </AnimatePresence>
-            {!state.leaderboard.length && <li className="text-slate-500 text-sm">Belum ada pemain...</li>}
-          </motion.ol>
-
-          <div className="mt-auto pt-4 border-t border-white/10 text-xs text-slate-400">PIN: <span className="font-mono text-brand-500">{s.pin}</span> - {state.playerCount} murid</div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -18,6 +18,7 @@ export default function HostHome() {
   const [autoReveal, setAutoReveal] = useState(true);
   const [teamMode, setTeamMode] = useState(false);
   const [eliminationMode, setEliminationMode] = useState(false);
+  const [shuffleOptions, setShuffleOptions] = useState(false);
   const [bossQuestions, setBossQuestions] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -41,7 +42,7 @@ export default function HostHome() {
     setLoading(true);
     const res = await fetch('/api/sessions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bankId: selected, hostName, timeLimitSec: timeLimit, autoReveal, teamMode, eliminationMode, bossQuestions }),
+      body: JSON.stringify({ bankId: selected, hostName, timeLimitSec: timeLimit, autoReveal, teamMode, eliminationMode, bossQuestions, shuffleOptions }),
     });
     const data = await res.json();
     if (data.session) router.push('/host/session/' + data.session.id);
@@ -159,6 +160,10 @@ export default function HostHome() {
               <div><div className="font-medium text-sm">Buka Jawaban Otomatis</div></div>
             </label>
             <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={shuffleOptions} onChange={e => setShuffleOptions(e.target.checked)} className="h-5 w-5 rounded bg-white/10 border-white/20 text-brand-500 focus:ring-brand-500 cursor-pointer" />
+              <div><div className="font-medium text-sm">Acak Urutan Opsi Jawaban</div></div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" checked={teamMode} onChange={e => setTeamMode(e.target.checked)} className="h-5 w-5 rounded bg-white/10 border-white/20 text-brand-500 focus:ring-brand-500 cursor-pointer" />
               <div><div className="font-medium text-sm">Aktifkan Mode Tim (Merah vs Biru)</div></div>
             </label>
@@ -182,23 +187,14 @@ export default function HostHome() {
           </div>
         </div>
 
-        {/* PILIHAN BOSS BATTLE */}
         {selectedBank && selectedBank.questions && (
           <div className="border-t border-white/10 pt-4 mt-2">
             <label className="block text-sm text-slate-400 mb-2">Pilih Soal Boss Battle (Poin 3x Lipat)</label>
             <div className="grid gap-2 max-h-60 overflow-y-auto pr-2">
               {selectedBank.questions.map((q, i) => (
                 <label key={i} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${bossQuestions.includes(i) ? 'border-rose-500/50 bg-rose-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
-                  <input 
-                    type="checkbox" 
-                    checked={bossQuestions.includes(i)}
-                    onChange={() => toggleBossQuestion(i)}
-                    className="mt-1 h-4 w-4 rounded bg-slate-800 border-white/20 text-rose-500 focus:ring-rose-500 cursor-pointer"
-                  />
-                  <div>
-                    <div className="text-xs text-slate-400">Soal {i + 1}</div>
-                    <div className="text-sm font-medium">{q.text}</div>
-                  </div>
+                  <input type="checkbox" checked={bossQuestions.includes(i)} onChange={() => toggleBossQuestion(i)} className="mt-1 h-4 w-4 rounded bg-slate-800 border-white/20 text-rose-500 focus:ring-rose-500 cursor-pointer" />
+                  <div><div className="text-xs text-slate-400">Soal {i + 1}</div><div className="text-sm font-medium">{q.text}</div></div>
                 </label>
               ))}
             </div>
