@@ -26,23 +26,16 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [timeOffset, setTimeOffset] = useState(0);
   const lastPlayedStateRef = useRef<string>('');
 
-  useEffect(() => { 
-    const t = setInterval(() => setNow(Date.now()), 100); 
-    return () => clearInterval(t); 
-  }, []);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 100); return () => clearInterval(t); }, []);
 
   useEffect(() => {
     if (state?.session.currentQuestionIndex !== undefined) {
-      setMyAnswer(null);
-      setHiddenOptions([]);
-      lastPlayedStateRef.current = '';
+      setMyAnswer(null); setHiddenOptions([]); lastPlayedStateRef.current = '';
     }
   }, [state?.session.currentQuestionIndex]);
 
   useEffect(() => {
-    if (state?.session?.serverNow) {
-      setTimeOffset(Date.now() - state.session.serverNow);
-    }
+    if (state?.session?.serverNow) setTimeOffset(Date.now() - state.session.serverNow);
   }, [state?.session?.serverNow]);
 
   useEffect(() => {
@@ -51,8 +44,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       if (lastPlayedStateRef.current !== stateId) {
         lastPlayedStateRef.current = stateId;
         if (isMuted) return;
-        if (myAnswer.correct) playCorrect();
-        else playWrong();
+        if (myAnswer.correct) playCorrect(); else playWrong();
       }
     }
   }, [state?.session.questionState, myAnswer, isMuted, state?.session.currentQuestionIndex]);
@@ -68,11 +60,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       if (savedSession && savedPlayer) {
         socket.emit('player:reconnect', { sessionId: savedSession, playerId: savedPlayer }, (res: any) => {
           if (res.ok) setJoined(true);
-          else {
-            setJoined(false);
-            sessionStorage.removeItem('edulive_session');
-            sessionStorage.removeItem('edulive_player');
-          }
+          else { setJoined(false); sessionStorage.removeItem('edulive_session'); sessionStorage.removeItem('edulive_player'); }
         });
       }
     });
@@ -82,36 +70,15 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     
     socket.on('session:ended', (report: any) => {
       setFinalReport(report);
-      sessionStorage.removeItem('edulive_session');
-      sessionStorage.removeItem('edulive_player');
-      
-      // Konfeti jika murid masuk 3 besar
+      sessionStorage.removeItem('edulive_session'); sessionStorage.removeItem('edulive_player');
       const myData = report.players.find((p: any) => p.id === myPlayer?.id);
       const isWinner = myData?.badges.some((b: any) => ['🥇', '🥈', '🥉'].includes(b.icon));
-      
       if (isWinner) {
-        const duration = 3000;
-        const end = Date.now() + duration;
-
+        const end = Date.now() + 3000;
         const frame = () => {
-          confetti({
-            particleCount: 5,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 },
-            colors: ['#f97316', '#eab308', '#3b82f6']
-          });
-          confetti({
-            particleCount: 5,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 },
-            colors: ['#f97316', '#eab308', '#3b82f6']
-          });
-
-          if (Date.now() < end) {
-            requestAnimationFrame(frame);
-          }
+          confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#f97316', '#eab308', '#3b82f6'] });
+          confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#f97316', '#eab308', '#3b82f6'] });
+          if (Date.now() < end) requestAnimationFrame(frame);
         };
         frame();
       }
@@ -124,27 +91,20 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     });
     
     socket.on('player:kicked', () => {
-      setKicked(true);
-      sessionStorage.removeItem('edulive_session');
-      sessionStorage.removeItem('edulive_player');
-      socket.disconnect();
+      setKicked(true); sessionStorage.removeItem('edulive_session'); sessionStorage.removeItem('edulive_player'); socket.disconnect();
     });
 
     return () => { socket.disconnect(); };
-  }, [myPlayer?.id]); // Tambahkan dependency myPlayer.id agar konfeti akurat
+  }, [myPlayer?.id]);
 
   async function join() {
     if (!name.trim() || !socketRef.current) return;
-    initAudio();
-    setError('');
+    initAudio(); setError('');
     socketRef.current.emit('player:join', { pin, name }, (res: any) => {
       if (res?.ok) { 
-        setJoined(true); 
-        setMyPlayer(res.player); 
-        sessionStorage.setItem('edulive_session', res.sessionId);
-        sessionStorage.setItem('edulive_player', res.player.id);
-      }
-      else setError(res?.error || 'Gagal join');
+        setJoined(true); setMyPlayer(res.player); 
+        sessionStorage.setItem('edulive_session', res.sessionId); sessionStorage.setItem('edulive_player', res.player.id);
+      } else setError(res?.error || 'Gagal join');
     });
   }
 
@@ -161,23 +121,17 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   function sendEmoji(emoji: string) {
     if (!socketRef.current) return;
     if (Date.now() - lastEmojiTime < 2000) return;
-    setLastEmojiTime(Date.now());
-    socketRef.current.emit('player:emoji', { emoji });
+    setLastEmojiTime(Date.now()); socketRef.current.emit('player:emoji', { emoji });
   }
 
   function useFiftyFifty() {
     if (!socketRef.current || !myPlayer?.powerups || myPlayer.powerups.fifty <= 0) return;
-    socketRef.current.emit('player:powerup', { type: 'fifty' }, (res: any) => {
-      if (res.ok) setHiddenOptions(res.hidden);
-      else setError(res.error);
-    });
+    socketRef.current.emit('player:powerup', { type: 'fifty' }, (res: any) => { if (res.ok) setHiddenOptions(res.hidden); else setError(res.error); });
   }
 
   function useDoublePoints() {
     if (!socketRef.current || !myPlayer?.powerups || myPlayer.powerups.double <= 0) return;
-    socketRef.current.emit('player:powerup', { type: 'double' }, (res: any) => {
-      if (!res.ok) setError(res.error);
-    });
+    socketRef.current.emit('player:powerup', { type: 'double' }, (res: any) => { if (!res.ok) setError(res.error); });
   }
 
   if (kicked) {
@@ -200,12 +154,9 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <div className="text-center text-5xl">🎮</div>
           <h1 className="text-2xl font-bold text-center mt-3">Masuk Kuis</h1>
           <p className="text-center text-slate-400 text-sm mt-1">PIN <span className="font-mono text-brand-500">{pin}</span></p>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama kamu" maxLength={24}
-            className="mt-5 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-brand-500" />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama kamu" maxLength={24} className="mt-5 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-brand-500" />
           {error && <div className="text-red-400 text-sm mt-2">{error}</div>}
-          <button onClick={join} disabled={!connected} className="btn-primary w-full mt-4 disabled:opacity-50">
-            {connected ? 'Masuk →' : 'Menghubungkan...'}
-          </button>
+          <button onClick={join} disabled={!connected} className="btn-primary w-full mt-4 disabled:opacity-50">{connected ? 'Masuk →' : 'Menghubungkan...'}</button>
         </div>
       </main>
     );
@@ -214,11 +165,12 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const q = state?.question;
   const isShowing = state?.session.questionState === 'showing' && q;
   
-  const estimatedServerNow = now - timeOffset;
+  // KALKULASI WAKTU (Bekukan jika dijeda)
+  const estimatedServerNow = state?.session.isPaused ? state.session.pauseStartAt : (now - timeOffset);
   const prepareEndAt = (state?.session.questionStartAt || 0);
   const questionEndAt = (state?.session.questionEndAt || 0);
   
-  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - estimatedServerNow) / 1000));
+  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - (now - timeOffset)) / 1000)); // Persiapan tidak bisa dijeda
   const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
   const isPreparing = prepareLeft > 0;
   const isTimeUp = answerLeft === 0;
@@ -226,6 +178,39 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const myFinalData = finalReport?.players?.find((p: any) => p.id === myPlayer?.id);
   const myTeam = myPlayer?.team;
   const isTeamMode = state?.session.teamMode;
+  const isEliminated = myPlayer?.isEliminated;
+
+  // LAYAR JIKA TERELIMINASI
+  if (isEliminated && state?.session.status !== 'ended') {
+    return (
+      <main className="min-h-screen px-4 py-6 max-w-md mx-auto relative pb-24 flex flex-col items-center justify-center">
+        <div className="card text-center border-red-500/30 bg-red-950/20 w-full animate-pop">
+          <div className="text-6xl mb-4">💀</div>
+          <h2 className="text-2xl font-bold text-red-400">Anda Tereliminasi</h2>
+          <p className="text-slate-300 text-sm mt-2">Sayang sekali, Anda menjawab salah atau kehabisan waktu.</p>
+          <p className="text-slate-400 text-xs mt-4">Tetap semangat! Anda masih bisa menonton sisa pertandingan.</p>
+        </div>
+        
+        <div className="card mt-4 w-full">
+          <div className="text-xs uppercase text-slate-400 mb-2">Top 5</div>
+          <ol className="space-y-1">
+            {state.leaderboard.slice(0, 5).map(r => (
+              <li key={r.id} className={`flex justify-between text-sm px-2 py-1.5 rounded ${r.id === myPlayer?.id ? 'bg-brand-500/15' : ''}`}>
+                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name} {isTeamMode && <span className="text-[10px] text-slate-500">({r.team === 'A' ? 'Merah' : 'Biru'})</span>}</span>
+                <span className="font-mono">{r.score}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="fixed bottom-0 left-0 right-0 p-3 bg-slate-900/90 backdrop-blur border-t border-white/10 flex justify-center gap-4 z-50">
+          {['👏', '😂', '😮', '🔥', '💯'].map(emoji => (
+            <button key={emoji} onClick={() => sendEmoji(emoji)} className="text-3xl hover:scale-125 transition-transform active:scale-90">{emoji}</button>
+          ))}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen px-4 py-6 max-w-md mx-auto relative pb-24">
@@ -235,16 +220,12 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <div className="font-semibold flex items-center gap-2">
             {myPlayer?.name}
             {isTeamMode && myTeam && (
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${myTeam === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                Tim {myTeam === 'A' ? 'Merah' : 'Biru'}
-              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${myTeam === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>Tim {myTeam === 'A' ? 'Merah' : 'Biru'}</span>
             )}
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={() => setIsMuted(!isMuted)} className="text-2xl" title={isMuted ? 'Nyalakan Suara' : 'Matikan Suara'}>
-            {isMuted ? '🔇' : '🔊'}
-          </button>
+          <button onClick={() => setIsMuted(!isMuted)} className="text-2xl" title={isMuted ? 'Nyalakan Suara' : 'Matikan Suara'}>{isMuted ? '🔇' : '🔊'}</button>
           <div className="text-right">
             <div className="text-xs text-slate-400">Skor</div>
             <div className="text-2xl font-mono font-bold text-brand-500">{myPlayer?.score ?? 0}</div>
@@ -257,7 +238,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <div className="text-4xl">🏁</div>
           <h2 className="text-xl font-semibold mt-2">Sesi selesai</h2>
           <p className="text-slate-400 text-sm mt-1 mb-4">Skor akhir: <span className="text-brand-500 font-mono font-bold text-lg">{myPlayer?.score}</span></p>
-          
           {myFinalData && myFinalData.badges.length > 0 && (
             <div className="bg-white/5 rounded-xl p-4 mt-4">
               <div className="text-xs text-slate-400 uppercase tracking-widest mb-3">Pencapaianmu</div>
@@ -283,14 +263,22 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       )}
 
       {isShowing && q && (
-        <div className="space-y-3 animate-slide-up">
+        <div className="space-y-3 animate-slide-up relative">
+          
+          {/* OVERLAY PAUSE */}
+          {state.session.isPaused && (
+            <div className="absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center border border-amber-500/50 animate-pop">
+              <div className="text-5xl mb-2">⏸️</div>
+              <div className="text-xl font-bold text-amber-400">Kuis Dijeda</div>
+              <div className="text-sm text-slate-300 mt-1">Menunggu guru melanjutkan...</div>
+            </div>
+          )}
+
           <div className="card">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span>Soal {state!.session.currentQuestionIndex + 1}/{state!.session.totalQuestions}</span>
               {!isPreparing && (
-                <span className={`font-mono text-lg font-bold ${answerLeft <= 5 ? 'text-red-400 animate-pulse' : 'text-brand-500'}`}>
-                  {answerLeft}s
-                </span>
+                <span className={`font-mono text-lg font-bold ${answerLeft <= 5 ? 'text-red-400 animate-pulse' : 'text-brand-500'}`}>{answerLeft}s</span>
               )}
             </div>
             <h2 className="text-lg font-semibold mt-2">{q.text}</h2>
@@ -303,26 +291,19 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             </div>
           ) : (
             <>
-              {!myAnswer && !isTimeUp && (
+              {!myAnswer && !isTimeUp && !state.session.isPaused && (
                 <div className="flex gap-2 justify-center py-2">
-                  <button onClick={useFiftyFifty} disabled={myPlayer?.powerups?.fifty <= 0}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${myPlayer?.powerups?.fifty > 0 ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30' : 'bg-white/5 border-white/10 text-slate-600 grayscale'}`}>
-                    ⚖️ 50:50 ({myPlayer?.powerups?.fifty || 0})
-                  </button>
-                  <button onClick={useDoublePoints} disabled={myPlayer?.powerups?.double <= 0 || myPlayer?.activeDouble}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${myPlayer?.powerups?.double > 0 && !myPlayer?.activeDouble ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30' : 'bg-white/5 border-white/10 text-slate-600 grayscale'}`}>
-                    ✨ 2x Poin ({myPlayer?.activeDouble ? 'Aktif' : (myPlayer?.powerups?.double || 0)})
-                  </button>
+                  <button onClick={useFiftyFifty} disabled={myPlayer?.powerups?.fifty <= 0} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${myPlayer?.powerups?.fifty > 0 ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30' : 'bg-white/5 border-white/10 text-slate-600 grayscale'}`}>⚖️ 50:50 ({myPlayer?.powerups?.fifty || 0})</button>
+                  <button onClick={useDoublePoints} disabled={myPlayer?.powerups?.double <= 0 || myPlayer?.activeDouble} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${myPlayer?.powerups?.double > 0 && !myPlayer?.activeDouble ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30' : 'bg-white/5 border-white/10 text-slate-600 grayscale'}`}>✨ 2x Poin ({myPlayer?.activeDouble ? 'Aktif' : (myPlayer?.powerups?.double || 0)})</button>
                 </div>
               )}
 
               {q.options.map((o, i) => {
                 if (hiddenOptions.includes(i)) return null;
                 const isMine = myAnswer?.choice === i;
-                const disabled = !!myAnswer || submitting || isTimeUp;
+                const disabled = !!myAnswer || submitting || isTimeUp || state.session.isPaused;
                 return (
-                  <button key={i} disabled={disabled} onClick={() => answer(i)}
-                    className={`option-tile ${isMine ? 'border-brand-500 bg-brand-500/20' : ''} ${disabled && !isMine ? 'opacity-50' : ''}`}>
+                  <button key={i} disabled={disabled} onClick={() => answer(i)} className={`option-tile ${isMine ? 'border-brand-500 bg-brand-500/20' : ''} ${disabled && !isMine ? 'opacity-50' : ''}`}>
                     <span className="h-9 w-9 grid place-items-center rounded-lg bg-brand-500/30 font-mono font-bold">{String.fromCharCode(65 + i)}</span>
                     <span>{o}</span>
                     {isMine && <span className="ml-auto text-brand-500">✓</span>}
@@ -333,9 +314,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           )}
 
           {myAnswer && !isPreparing && (
-            <div className="text-center text-sm text-slate-400 mt-2">
-              Jawaban terkirim — menunggu hasil...
-            </div>
+            <div className="text-center text-sm text-slate-400 mt-2">Jawaban terkirim — menunggu hasil...</div>
           )}
           {error && <div className="text-red-400 text-sm text-center">{error}</div>}
         </div>
@@ -346,17 +325,9 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <div className="text-xs text-slate-400">Jawaban benar</div>
           <div className="text-lg font-semibold text-emerald-400 mt-1">{q.options[q.correctIndex!]}</div>
           <div className="mt-3 text-sm">
-            {myAnswer?.correct ? (
-              <span className="text-emerald-400">✓ Benar! +{myAnswer.points} poin</span>
-            ) : myAnswer ? (
-              <span className="text-red-400">✗ Belum tepat</span>
-            ) : (
-              <span className="text-slate-400">Tidak menjawab</span>
-            )}
+            {myAnswer?.correct ? (<span className="text-emerald-400">✓ Benar! +{myAnswer.points} poin</span>) : myAnswer ? (<span className="text-red-400">✗ Belum tepat</span>) : (<span className="text-slate-400">Tidak menjawab</span>)}
           </div>
-          {myPlayer && myPlayer.streak >= 2 && (
-            <div className="mt-2 text-amber-400 text-sm">🔥 Streak {myPlayer.streak}</div>
-          )}
+          {myPlayer && myPlayer.streak >= 2 && (<div className="mt-2 text-amber-400 text-sm">🔥 Streak {myPlayer.streak}</div>)}
         </div>
       )}
 
@@ -377,10 +348,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       {state?.session.status !== 'ended' && (
         <div className="fixed bottom-0 left-0 right-0 p-3 bg-slate-900/90 backdrop-blur border-t border-white/10 flex justify-center gap-4 z-50">
           {['👏', '😂', '😮', '🔥', '💯'].map(emoji => (
-            <button key={emoji} onClick={() => sendEmoji(emoji)}
-              className="text-3xl hover:scale-125 transition-transform active:scale-90">
-              {emoji}
-            </button>
+            <button key={emoji} onClick={() => sendEmoji(emoji)} className="text-3xl hover:scale-125 transition-transform active:scale-90">{emoji}</button>
           ))}
         </div>
       )}

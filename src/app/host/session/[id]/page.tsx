@@ -11,7 +11,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   const [busy, setBusy] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
 
-  async function action(a: 'start' | 'next' | 'reveal' | 'end') {
+  async function action(a: 'start' | 'next' | 'reveal' | 'end' | 'pause' | 'resume') {
     setBusy(a);
     const res = await fetch('/api/sessions/' + id + '/control', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -29,7 +29,6 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     if (!state) return;
     const randomUser = ['@budi', '@santi', '@andi', '@rina'][Math.floor(Math.random() * 4)];
     const randomGift = ['Mawar 🌹', 'Kue 🎂', 'Mahkota 👑', 'Roket 🚀'][Math.floor(Math.random() * 4)];
-    
     await fetch('/api/mock/gift', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin: state.session.pin, username: randomUser, giftName: randomGift }),
@@ -48,11 +47,12 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
   function downloadCSV() {
     if (!report) return;
-    const headers = ['Peringkat', 'Nama', 'Tim', 'Skor', 'Jawaban Benar', 'Total Jawaban', 'Akurasi (%)', 'Pencapaian'];
+    const headers = ['Peringkat', 'Nama', 'Tim', 'Skor', 'Jawaban Benar', 'Total Jawaban', 'Akurasi (%)', 'Pencapaian', 'Status'];
     const rows = report.players.map((p: any, i: number) => {
       const badgeStr = p.badges.map((b: any) => `${b.icon} ${b.label}`).join(' | ');
       const teamStr = p.team ? (p.team === 'A' ? 'Merah' : 'Biru') : '-';
-      return [ i + 1, `"${p.name}"`, `"${teamStr}"`, p.score, p.correct, p.total, p.accuracy, `"${badgeStr}"` ].join(',');
+      const statusStr = p.isEliminated ? 'Tereliminasi' : 'Bertahan';
+      return [ i + 1, `"${p.name}"`, `"${teamStr}"`, p.score, p.correct, p.total, p.accuracy, `"${badgeStr}"`, statusStr ].join(',');
     });
     const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -60,9 +60,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', `Laporan_Kuis_${report.bankName.replace(/\s+/g, '_')}_PIN_${report.pin}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
 
   if (!state) return <div className="p-10 text-slate-400">Memuat sesi...</div>;
@@ -74,17 +72,16 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8 space-y-6">
       <div>
-        <Link href="/host" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition">
-          <span>←</span> Kembali ke Dashboard
-        </Link>
+        <Link href="/host" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition"><span>←</span> Kembali ke Dashboard</Link>
       </div>
 
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className={'h-2.5 w-2.5 rounded-full ' + (connected ? 'bg-emerald-400' : 'bg-red-500')} />
-            <span className="text-xs uppercase tracking-wider text-slate-400">{s.status} - {s.questionState}</span>
+            <span className="text-xs uppercase tracking-wider text-slate-400">{s.status} - {s.questionState} {s.isPaused && '(PAUSED)'}</span>
             {s.teamMode && <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">Mode Tim</span>}
+            {s.eliminationMode && <span className="text-xs bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/30">Mode Eliminasi</span>}
           </div>
           <h1 className="text-2xl font-bold mt-1">{s.bankName}</h1>
           <p className="text-slate-400 text-sm">{s.hostName} - {state.playerCount} murid</p>
@@ -119,12 +116,9 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
             <a href={overlayUrl} target="_blank" className="text-brand-500 break-all text-sm hover:underline">{overlayUrl}</a>
           </div>
         </div>
-
         <div className="card flex flex-col items-center justify-center text-center">
           <div className="text-sm text-slate-400 mb-3">Scan untuk Join</div>
-          <div className="bg-white p-2 rounded-xl">
-            <QRCodeSVG value={playUrl} size={120} />
-          </div>
+          <div className="bg-white p-2 rounded-xl"><QRCodeSVG value={playUrl} size={120} /></div>
         </div>
       </div>
 
@@ -132,45 +126,34 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
         <h2 className="font-semibold mb-3">Kontrol</h2>
         <div className="flex flex-wrap gap-2 items-center">
           {s.status === 'lobby' && (
-            <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">
-              {busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}
-            </button>
+            <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">{busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}</button>
           )}
           {(s.status === 'live' || s.status === 'lobby') && s.questionState === 'idle' && (
-            <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">
-              {busy === 'next' ? '...' : s.currentQuestionIndex < 0 ? 'Tampilkan Soal 1' : 'Soal Berikutnya ->'}
-            </button>
+            <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : s.currentQuestionIndex < 0 ? 'Tampilkan Soal 1' : 'Soal Berikutnya ->'}</button>
           )}
           {s.questionState === 'showing' && (
-            <button onClick={() => action('reveal')} disabled={!!busy} className="btn-ghost">
-              {busy === 'reveal' ? '...' : 'Buka Jawaban'}
-            </button>
+            <>
+              <button onClick={() => action('reveal')} disabled={!!busy} className="btn-ghost">{busy === 'reveal' ? '...' : 'Buka Jawaban'}</button>
+              <button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>
+                {s.isPaused ? '▶ Lanjutkan Waktu' : '⏸ Jeda Waktu'}
+              </button>
+            </>
           )}
           {s.questionState === 'revealed' && s.currentQuestionIndex + 1 < s.totalQuestions && (
-            <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">
-              {busy === 'next' ? '...' : 'Soal Berikutnya ->'}
-            </button>
+            <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : 'Soal Berikutnya ->'}</button>
           )}
           {s.questionState === 'revealed' && s.currentQuestionIndex + 1 >= s.totalQuestions && s.status !== 'ended' && (
-            <button onClick={() => action('end')} disabled={!!busy} className="btn-danger">
-              {busy === 'end' ? '...' : 'Akhiri Sesi'}
-            </button>
+            <button onClick={() => action('end')} disabled={!!busy} className="btn-danger">{busy === 'end' ? '...' : 'Akhiri Sesi'}</button>
           )}
-
-          {/* TOMBOL TEST GIFT */}
           <div className="border-l border-white/20 pl-2 ml-2">
-            <button onClick={triggerMockGift} className="btn-ghost bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 text-sm">
-              🎁 Test Gift
-            </button>
+            <button onClick={triggerMockGift} className="btn-ghost bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 text-sm">🎁 Test Gift</button>
           </div>
         </div>
       </section>
 
       {state.question && (
         <section className="card">
-          <div className="text-xs text-slate-400">
-            Soal {s.currentQuestionIndex + 1} / {s.totalQuestions} - {state.question.timeLimitSec} detik
-          </div>
+          <div className="text-xs text-slate-400">Soal {s.currentQuestionIndex + 1} / {s.totalQuestions} - {state.question.timeLimitSec} detik</div>
           <h3 className="text-xl font-semibold mt-2">{state.question.text}</h3>
           <div className="grid grid-cols-2 gap-2 mt-4">
             {state.question.options.map((o, i) => (
@@ -179,10 +162,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               </div>
             ))}
           </div>
-          <div className="mt-4 text-sm text-slate-400">
-            Jawaban terkumpul: <span className="text-white">{state.answerStats.total}</span> - benar:{' '}
-            <span className="text-emerald-400">{state.answerStats.correct}</span>
-          </div>
+          <div className="mt-4 text-sm text-slate-400">Jawaban terkumpul: <span className="text-white">{state.answerStats.total}</span> - benar: <span className="text-emerald-400">{state.answerStats.correct}</span></div>
         </section>
       )}
 
@@ -200,22 +180,18 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
           <div className="space-y-1 max-h-60 overflow-y-auto pr-2">
             {state.allPlayers.length === 0 && <div className="text-slate-500 text-sm">Belum ada murid.</div>}
             {state.allPlayers.map(p => (
-              <div key={p.id} className="flex items-center justify-between rounded-lg px-3 py-2 bg-white/5">
+              <div key={p.id} className={'flex items-center justify-between rounded-lg px-3 py-2 ' + (p.isEliminated ? 'bg-red-950/30 border border-red-500/20 opacity-70' : 'bg-white/5')}>
                 <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${p.online ? 'bg-emerald-500' : 'bg-slate-600'}`} title={p.online ? 'Online' : 'Offline'} />
+                  <span className={`h-2 w-2 rounded-full ${p.online ? 'bg-emerald-500' : 'bg-slate-600'}`} />
                   <span className="font-medium text-sm">{p.name}</span>
+                  {p.isEliminated && <span title="Tereliminasi">💀</span>}
                   {s.teamMode && p.team && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.team === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>
                       {p.team === 'A' ? 'Merah' : 'Biru'}
                     </span>
                   )}
                 </div>
-                <button
-                  onClick={() => kickPlayer(p.id, p.name)}
-                  disabled={busy === 'kick_' + p.id}
-                  className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition"
-                  title="Tendang murid"
-                >
+                <button onClick={() => kickPlayer(p.id, p.name)} disabled={busy === 'kick_' + p.id} className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition">
                   {busy === 'kick_' + p.id ? '...' : '🗑️'}
                 </button>
               </div>
@@ -231,50 +207,31 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               <h2 className="font-semibold text-lg">Laporan Akhir</h2>
               <div className="text-sm text-slate-400">PIN {report.pin} - {report.totalQuestions} soal - {report.players.length} murid</div>
               {report.teamMode && report.teamScores && (
-                <div className="text-sm mt-1 font-semibold">
-                  <span className="text-red-400">Merah: {report.teamScores.A}</span> vs <span className="text-blue-400">Biru: {report.teamScores.B}</span>
-                </div>
+                <div className="text-sm mt-1 font-semibold"><span className="text-red-400">Merah: {report.teamScores.A}</span> vs <span className="text-blue-400">Biru: {report.teamScores.B}</span></div>
               )}
             </div>
-            <button onClick={downloadCSV} className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-sm px-4">
-              ⬇️ Download CSV (Excel)
-            </button>
+            <button onClick={downloadCSV} className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-sm px-4">⬇️ Download CSV (Excel)</button>
           </div>
           
           <div className="overflow-x-auto mb-8">
             <table className="w-full text-sm">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
-                  <th className="text-left py-2">#</th>
-                  <th className="text-left">Nama</th>
+                  <th className="text-left py-2">#</th><th className="text-left">Nama</th>
                   {report.teamMode && <th className="text-left">Tim</th>}
-                  <th className="text-left">Pencapaian</th>
-                  <th className="text-right">Skor</th>
-                  <th className="text-right">Akurasi</th>
+                  <th className="text-left">Pencapaian</th><th className="text-right">Skor</th><th className="text-right">Akurasi</th>
                 </tr>
               </thead>
               <tbody>
                 {report.players.map((p: any, i: number) => (
                   <tr key={p.id} className="border-b border-white/5">
                     <td className="py-3">{i + 1}</td>
-                    <td>{p.name}</td>
+                    <td>{p.name} {p.isEliminated && '💀'}</td>
                     {report.teamMode && (
-                      <td>
-                        <span className={`text-xs px-2 py-1 rounded-full ${p.team === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                          {p.team === 'A' ? 'Merah' : 'Biru'}
-                        </span>
-                      </td>
+                      <td><span className={`text-xs px-2 py-1 rounded-full ${p.team === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>{p.team === 'A' ? 'Merah' : 'Biru'}</span></td>
                     )}
-                    <td>
-                      <div className="flex gap-1">
-                        {p.badges.map((b: any, idx: number) => (
-                          <span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>
-                        ))}
-                        {p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}
-                      </div>
-                    </td>
-                    <td className="text-right font-mono">{p.score}</td>
-                    <td className="text-right">{p.accuracy}%</td>
+                    <td><div className="flex gap-1">{p.badges.map((b: any, idx: number) => (<span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>))}{p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}</div></td>
+                    <td className="text-right font-mono">{p.score}</td><td className="text-right">{p.accuracy}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -283,9 +240,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
           {report.hardestQuestions && report.hardestQuestions.length > 0 && (
             <div className="border-t border-white/10 pt-6">
-              <h3 className="font-semibold text-lg text-rose-400 mb-4 flex items-center gap-2">
-                <span>🚨</span> Analisis Soal Tersulit
-              </h3>
+              <h3 className="font-semibold text-lg text-rose-400 mb-4 flex items-center gap-2"><span>🚨</span> Analisis Soal Tersulit</h3>
               <div className="space-y-3">
                 {report.hardestQuestions.map((q: any, idx: number) => {
                   const wrongPct = q.total > 0 ? Math.round((q.wrong / q.total) * 100) : 0;
@@ -293,13 +248,9 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                     <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded-xl">
                       <div className="flex justify-between items-start gap-4 mb-2">
                         <div className="font-medium text-sm text-slate-200">{q.text}</div>
-                        <div className="text-xs text-slate-400 whitespace-nowrap">
-                          {q.wrong} dari {q.total} murid salah
-                        </div>
+                        <div className="text-xs text-slate-400 whitespace-nowrap">{q.wrong} dari {q.total} murid salah</div>
                       </div>
-                      <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-rose-500" style={{ width: `${wrongPct}%` }} />
-                      </div>
+                      <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden"><div className="h-full bg-rose-500" style={{ width: `${wrongPct}%` }} /></div>
                       <div className="text-right text-xs text-rose-400 mt-1 font-mono">{wrongPct}% Salah</div>
                     </div>
                   );
@@ -319,23 +270,13 @@ function LeaderboardMini({ rows, teamMode }: { rows: any[], teamMode?: boolean }
     <motion.ol className="flex flex-col gap-1 relative">
       <AnimatePresence>
         {rows.map(r => (
-          <motion.li 
-            layout
-            key={r.id} 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            className={'flex items-center justify-between rounded-lg px-3 py-2 ' + (r.rank === 1 ? 'bg-brand-500/15 border border-brand-500/30' : 'bg-white/5')}
-          >
+          <motion.li layout key={r.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className={'flex items-center justify-between rounded-lg px-3 py-2 ' + (r.isEliminated ? 'bg-red-950/20 opacity-60' : (r.rank === 1 ? 'bg-brand-500/15 border border-brand-500/30' : 'bg-white/5'))}>
             <div className="flex items-center gap-3">
               <span className="w-6 text-center font-mono font-bold text-brand-500">{r.rank}</span>
               <span className="font-medium">{r.name}</span>
-              {teamMode && (
-                <span className={`text-[10px] font-bold ${r.team === 'A' ? 'text-red-400' : 'text-blue-400'}`}>
-                  {r.team === 'A' ? 'Merah' : 'Biru'}
-                </span>
-              )}
+              {r.isEliminated && <span>💀</span>}
+              {teamMode && <span className={`text-[10px] font-bold ${r.team === 'A' ? 'text-red-400' : 'text-blue-400'}`}>{r.team === 'A' ? 'Merah' : 'Biru'}</span>}
               {r.streak >= 2 && <span className="text-xs text-amber-400">🔥{r.streak}</span>}
             </div>
             <span className="font-mono text-slate-300">{r.score}</span>
