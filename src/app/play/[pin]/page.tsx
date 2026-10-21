@@ -17,6 +17,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [myAnswer, setMyAnswer] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [finalReport, setFinalReport] = useState<any>(null);
 
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
@@ -58,13 +59,18 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
     socket.on('session:state', (s: PublicState) => setState(s));
+    
+    // Tangkap laporan akhir untuk melihat badge
+    socket.on('session:ended', (report: any) => {
+      setFinalReport(report);
+    });
+
     socket.on('player:state', (ps: any) => {
       if (!ps) return;
       setMyPlayer(ps.player);
       if (ps.myAnswer) setMyAnswer(ps.myAnswer);
     });
     
-    // Tangkap sinyal tendangan dari Guru
     socket.on('player:kicked', () => {
       setKicked(true);
       socket.disconnect();
@@ -93,7 +99,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     });
   }
 
-  // LAYAR JIKA MURID DITENDANG
   if (kicked) {
     return (
       <main className="min-h-screen grid place-items-center px-6 bg-red-950/20">
@@ -137,6 +142,8 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const isPreparing = prepareLeft > 0;
   const isTimeUp = answerLeft === 0;
 
+  const myFinalData = finalReport?.players?.find((p: any) => p.id === myPlayer?.id);
+
   return (
     <main className="min-h-screen px-4 py-6 max-w-md mx-auto">
       <header className="flex items-center justify-between mb-4">
@@ -156,10 +163,25 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       </header>
 
       {state?.session.status === 'ended' && (
-        <div className="card text-center">
+        <div className="card text-center animate-pop">
           <div className="text-4xl">🏁</div>
           <h2 className="text-xl font-semibold mt-2">Sesi selesai</h2>
-          <p className="text-slate-400 text-sm mt-1">Skor akhir: <span className="text-brand-500 font-mono font-bold">{myPlayer?.score}</span></p>
+          <p className="text-slate-400 text-sm mt-1 mb-4">Skor akhir: <span className="text-brand-500 font-mono font-bold text-lg">{myPlayer?.score}</span></p>
+          
+          {/* TAMPILAN BADGE MURID */}
+          {myFinalData && myFinalData.badges.length > 0 && (
+            <div className="bg-white/5 rounded-xl p-4 mt-4">
+              <div className="text-xs text-slate-400 uppercase tracking-widest mb-3">Pencapaianmu</div>
+              <div className="flex flex-wrap justify-center gap-3">
+                {myFinalData.badges.map((b: any, i: number) => (
+                  <div key={i} className="flex flex-col items-center bg-white/10 px-3 py-2 rounded-lg min-w-[70px]">
+                    <span className="text-3xl mb-1">{b.icon}</span>
+                    <span className="text-[10px] text-center leading-tight">{b.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -235,7 +257,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
         </div>
       )}
 
-      {state && state.leaderboard.length > 0 && (
+      {state && state.leaderboard.length > 0 && state.session.status !== 'ended' && (
         <div className="card mt-4">
           <div className="text-xs uppercase text-slate-400 mb-2">Top 5</div>
           <ol className="space-y-1">

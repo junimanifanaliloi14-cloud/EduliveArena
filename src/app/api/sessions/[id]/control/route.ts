@@ -15,8 +15,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (io) {
       io.to('session:' + id).emit('session:state', store.getPublicState(id));
       
-      // Jika jawaban dibuka, perbarui skor pribadi masing-masing murid
-      if (action === 'reveal' || action === 'end') {
+      // Kirim laporan akhir ke semua murid jika sesi berakhir
+      if (action === 'end') {
+        const report = store.getReport(id);
+        io.to('session:' + id).emit('session:ended', report);
+      } else if (action === 'reveal') {
         const session = store.getSession(id);
         if (session) {
           for (const pid of session.players.keys()) {

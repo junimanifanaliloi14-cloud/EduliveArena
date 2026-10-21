@@ -108,7 +108,6 @@ class Store {
     this.revealAnswer(id);
     if (globalThis.__IO__) {
       globalThis.__IO__.to('session:' + id).emit('session:state', this.getPublicState(id));
-      // Kirim update skor terbaru ke masing-masing murid
       for (const pid of s.players.keys()) {
         globalThis.__IO__.to('player:' + pid).emit('player:state', this.getPlayerState(id, pid));
       }
@@ -126,16 +125,16 @@ class Store {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Sesi tidak ditemukan');
     this._clearTimer(id);
-    if (s.questionState === 'revealed') return s; // Cegah double-reveal
+    if (s.questionState === 'revealed') return s;
 
     s.questionState = 'revealed';
     
-    // TERAPKAN SKOR DI SINI
     for (const [pid, p] of s.players) {
       const ans = s.currentAnswers.get(pid);
       if (ans) {
         p.score += ans.points;
         p.streak = ans.newStreak;
+        p.maxStreak = Math.max(p.maxStreak || 0, p.streak); // Lacak streak tertinggi
         p.totalAnswers++;
         if (ans.correct) p.correctCount++;
       } else {
@@ -161,7 +160,7 @@ class Store {
     if (s.status === 'ended') throw new Error('Sesi telah berakhir');
     const player = {
       id: 'p_' + nid(), name: (name || 'Anonim').trim().slice(0, 24) || 'Anonim',
-      score: 0, streak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(),
+      score: 0, streak: 0, maxStreak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(),
       online: true,
     };
     s.players.set(player.id, player);
@@ -197,7 +196,6 @@ class Store {
     const timeLimit = s.questionEndAt - s.questionStartAt;
     const result = this._score({ correct, timeUsed, timeLimit, streak: p.streak });
 
-    // SIMPAN JAWABAN TAPI JANGAN TAMBAHKAN KE p.score SEKARANG
     s.currentAnswers.set(playerId, { 
       playerId, choice, submittedAt: Date.now(), correct, 
       points: result.points, newStreak: result.newStreak 
@@ -218,7 +216,6 @@ class Store {
     const bank = this.banks.get(s.bankId);
     const q = s.currentQuestionIndex >= 0 ? bank.questions[s.currentQuestionIndex] : null;
 
-    // Skor di leaderboard TIDAK berubah sampai revealAnswer dipanggil
     const leaderboard = Array.from(s.players.values())
       .sort((a, b) => b.score - a.score).slice(0, 20)
       .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, score: p.score, streak: p.streak }));
@@ -261,13 +258,34 @@ class Store {
     const s = this.sessions.get(sessionId);
     if (!s) return null;
     const bank = this.banks.get(s.bankId);
+    
+    const sortedPlayers = Array.from(s.players.values()).sort((a, b) => b.score - a.score);
+    
+    // Kalkulasi Badge
+    const playersWithBadges = sortedPlayers.map((p, index) => {
+      const badges = [];
+      if (index === 0) badges.push({ icon: '🥇', label: 'Juara 1' });
+      else if (index === 1) badges.push({ icon: '🥈', label: 'Juara 2' });
+      else if (index === 2) badges.push({ icon: '🥉', label: 'Juara 3' });
+
+      if (p.totalAnswers > 0 && p.correctCount === p.totalAnswers) {
+        badges.push({ icon: '🎯', label: 'Sniper (100%)' });
+      }
+      if (p.maxStreak >= 3) {
+        badges.push({ icon: '🔥', label: `Streak ${p.maxStreak}x` });
+      }
+
+      return {
+        id: p.id, name: p.name, score: p.score, correct: p.correctCount, total: p.totalAnswers,
+        accuracy: p.totalAnswers ? Math.round((p.correctCount / p.totalAnswers) * 100) : 0,
+        badges
+      };
+    });
+
     return {
       sessionId: s.id, pin: s.pin, hostName: s.hostName, bankName: bank.name,
       totalQuestions: bank.questions.length, startedAt: s.createdAt, endedAt: s.endedAt,
-      players: Array.from(s.players.values()).map(p => ({
-        id: p.id, name: p.name, score: p.score, correct: p.correctCount, total: p.totalAnswers,
-        accuracy: p.totalAnswers ? Math.round((p.correctCount / p.totalAnswers) * 100) : 0,
-      })).sort((a, b) => b.score - a.score),
+      players: playersWithBadges,
     };
   }
 }

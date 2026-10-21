@@ -76,7 +76,6 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
           </div>
         </div>
 
-        {/* KOTAK QR CODE */}
         <div className="card flex flex-col items-center justify-center text-center">
           <div className="text-sm text-slate-400 mb-3">Scan untuk Join</div>
           <div className="bg-white p-2 rounded-xl">
@@ -170,17 +169,32 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       </div>
 
       {report && (
-        <section className="card">
+        <section className="card animate-pop">
           <h2 className="font-semibold mb-2">Laporan Akhir</h2>
-          <div className="text-sm text-slate-400 mb-3">PIN {report.pin} - {report.totalQuestions} soal - {report.players.length} murid</div>
+          <div className="text-sm text-slate-400 mb-4">PIN {report.pin} - {report.totalQuestions} soal - {report.players.length} murid</div>
           <table className="w-full text-sm">
             <thead className="text-slate-400 border-b border-white/10">
-              <tr><th className="text-left py-2">#</th><th className="text-left">Nama</th><th className="text-right">Skor</th><th className="text-right">Akurasi</th></tr>
+              <tr>
+                <th className="text-left py-2">#</th>
+                <th className="text-left">Nama</th>
+                <th className="text-left">Pencapaian</th>
+                <th className="text-right">Skor</th>
+                <th className="text-right">Akurasi</th>
+              </tr>
             </thead>
             <tbody>
               {report.players.map((p: any, i: number) => (
                 <tr key={p.id} className="border-b border-white/5">
-                  <td className="py-2">{i + 1}</td><td>{p.name}</td>
+                  <td className="py-3">{i + 1}</td>
+                  <td>{p.name}</td>
+                  <td>
+                    <div className="flex gap-1">
+                      {p.badges.map((b: any, idx: number) => (
+                        <span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>
+                      ))}
+                      {p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}
+                    </div>
+                  </td>
                   <td className="text-right font-mono">{p.score}</td>
                   <td className="text-right">{p.accuracy}%</td>
                 </tr>
