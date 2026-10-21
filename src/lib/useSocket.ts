@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { PublicState } from './types';
 
@@ -12,22 +12,22 @@ function getSocket() {
 export function useSessionSocket(sessionId: string | null) {
   const [state, setState] = useState<PublicState | null>(null);
   const [connected, setConnected] = useState(false);
-  const sockRef = useRef<Socket | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
-    const socket = getSocket();
-    sockRef.current = socket;
+    const s = getSocket();
+    setSocket(s);
 
-    const onConnect = () => { setConnected(true); socket.emit('host:subscribe', { sessionId }); };
-    const onState = (s: PublicState) => { if (s?.session?.id === sessionId) setState(s); };
+    const onConnect = () => { setConnected(true); s.emit('host:subscribe', { sessionId }); };
+    const onState = (pub: PublicState) => { if (pub?.session?.id === sessionId) setState(pub); };
 
-    socket.on('connect', onConnect);
-    socket.on('session:state', onState);
-    if (socket.connected) onConnect();
+    s.on('connect', onConnect);
+    s.on('session:state', onState);
+    if (s.connected) onConnect();
 
-    return () => { socket.off('connect', onConnect); socket.off('session:state', onState); };
+    return () => { s.off('connect', onConnect); s.off('session:state', onState); };
   }, [sessionId]);
 
-  return { state, connected, socket: sockRef.current };
+  return { state, connected, socket };
 }

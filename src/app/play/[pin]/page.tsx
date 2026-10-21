@@ -57,10 +57,34 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   useEffect(() => {
     const socket = io({ path: '/socket.io', transports: ['websocket', 'polling'] });
     socketRef.current = socket;
-    socket.on('connect', () => setConnected(true));
+    
+    socket.on('connect', () => {
+      setConnected(true);
+      
+      // FITUR BARU: Cek jika sesi masih tersimpan di tab browser
+      const savedSession = sessionStorage.getItem('edulive_session');
+      const savedPlayer = sessionStorage.getItem('edulive_player');
+      if (savedSession && savedPlayer) {
+        socket.emit('player:reconnect', { sessionId: savedSession, playerId: savedPlayer }, (res: any) => {
+          if (res.ok) {
+            setJoined(true);
+          } else {
+            setJoined(false);
+            sessionStorage.removeItem('edulive_session');
+            sessionStorage.removeItem('edulive_player');
+          }
+        });
+      }
+    });
+
     socket.on('disconnect', () => setConnected(false));
     socket.on('session:state', (s: PublicState) => setState(s));
-    socket.on('session:ended', (report: any) => setFinalReport(report));
+    
+    socket.on('session:ended', (report: any) => {
+      setFinalReport(report);
+      sessionStorage.removeItem('edulive_session');
+      sessionStorage.removeItem('edulive_player');
+    });
 
     socket.on('player:state', (ps: any) => {
       if (!ps) return;
@@ -70,6 +94,8 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     
     socket.on('player:kicked', () => {
       setKicked(true);
+      sessionStorage.removeItem('edulive_session');
+      sessionStorage.removeItem('edulive_player');
       socket.disconnect();
     });
 
@@ -81,7 +107,13 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     initAudio();
     setError('');
     socketRef.current.emit('player:join', { pin, name }, (res: any) => {
-      if (res?.ok) { setJoined(true); setMyPlayer(res.player); }
+      if (res?.ok) { 
+        setJoined(true); 
+        setMyPlayer(res.player); 
+        // Simpan data untuk auto-reconnect
+        sessionStorage.setItem('edulive_session', res.sessionId);
+        sessionStorage.setItem('edulive_player', res.player.id);
+      }
       else setError(res?.error || 'Gagal join');
     });
   }

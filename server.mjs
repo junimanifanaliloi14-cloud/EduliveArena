@@ -42,6 +42,29 @@ io.on('connection', (socket) => {
     } catch (e) { ack?.({ ok: false, error: e.message }); }
   });
 
+  // FITUR BARU: Auto-Reconnect
+  socket.on('player:reconnect', ({ sessionId, playerId }, ack) => {
+    try {
+      const session = store.getSession(sessionId);
+      if (!session || !session.players.has(playerId)) {
+        return ack?.({ ok: false, error: 'Sesi atau pemain tidak ditemukan' });
+      }
+      socket.join(`session:${sessionId}`);
+      socket.join(`player:${playerId}`);
+      socket.data.sessionId = sessionId;
+      socket.data.playerId = playerId;
+      
+      const state = store.getPublicState(sessionId);
+      if (state) socket.emit('session:state', state);
+      const playerState = store.getPlayerState(sessionId, playerId);
+      if (playerState) socket.emit('player:state', playerState);
+      
+      ack?.({ ok: true });
+    } catch (e) {
+      ack?.({ ok: false, error: e.message });
+    }
+  });
+
   socket.on('player:answer', ({ choice }, ack) => {
     const { sessionId, playerId } = socket.data;
     if (!sessionId || !playerId) return ack?.({ ok: false, error: 'Belum join' });
@@ -53,14 +76,10 @@ io.on('connection', (socket) => {
     } catch (e) { ack?.({ ok: false, error: e.message }); }
   });
 
-  // EVENT BARU: Terima emoji dari murid, teruskan ke OBS
   socket.on('player:emoji', ({ emoji }) => {
     const { sessionId } = socket.data;
     if (sessionId) {
-      io.to(`session:${sessionId}`).emit('overlay:emoji', { 
-        emoji, 
-        id: Date.now() + Math.random() // ID unik untuk animasi
-      });
+      io.to(`session:${sessionId}`).emit('overlay:emoji', { emoji, id: Date.now() + Math.random() });
     }
   });
 

@@ -8,7 +8,7 @@ interface FloatingEmoji { id: number; emoji: string; x: number; }
 
 export default function Overlay({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { state } = useSessionSocket(id);
+  const { state, socket } = useSessionSocket(id);
   
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
@@ -46,21 +46,19 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
     }
   }, [state?.session.questionState, state?.session.currentQuestionIndex]);
 
+  // Listener Emoji menggunakan Socket dari hook (Auto-Reconnect)
   useEffect(() => {
-    import('socket.io-client').then(({ io }) => {
-      const s = io({ path: '/socket.io', transports: ['websocket', 'polling'] });
-      s.emit('host:subscribe', { sessionId: id });
-      
-      s.on('overlay:emoji', ({ emoji, id: emojiId }) => {
-        const xPos = Math.random() * 80 + 10;
-        setEmojis(prev => [...prev, { id: emojiId, emoji, x: xPos }]);
-        setTimeout(() => {
-          setEmojis(prev => prev.filter(e => e.id !== emojiId));
-        }, 3000);
-      });
-      return () => s.disconnect();
-    });
-  }, [id]);
+    if (!socket) return;
+    const handleEmoji = ({ emoji, id: emojiId }: any) => {
+      const xPos = Math.random() * 80 + 10;
+      setEmojis(prev => [...prev, { id: emojiId, emoji, x: xPos }]);
+      setTimeout(() => {
+        setEmojis(prev => prev.filter(e => e.id !== emojiId));
+      }, 3000);
+    };
+    socket.on('overlay:emoji', handleEmoji);
+    return () => { socket.off('overlay:emoji', handleEmoji); };
+  }, [socket]);
 
   if (!state) return null;
   const s = state.session;
@@ -97,7 +95,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
       <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
         <div className="col-span-2 card min-h-[380px] flex flex-col relative overflow-hidden">
           
-          {/* SKOR TIM (Jika Mode Tim Aktif) */}
           {s.teamMode && s.teamScores && (
             <div className="flex gap-4 mb-4 bg-slate-800/80 p-3 rounded-xl border border-white/10 shadow-lg animate-slide-up">
               <div className="flex-1 bg-red-500/20 border border-red-500/30 rounded-lg p-2 flex items-center justify-between">
