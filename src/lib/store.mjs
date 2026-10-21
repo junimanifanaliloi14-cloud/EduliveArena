@@ -53,6 +53,7 @@ class Store {
       currentQuestionIndex: -1, questionState: 'idle',
       questionStartAt: null, questionEndAt: null,
       players: new Map(), currentAnswers: new Map(),
+      questionStats: [], // FITUR BARU: Menyimpan statistik per soal
       createdAt: Date.now(), endedAt: null,
     };
     this.sessions.set(session.id, session);
@@ -130,6 +131,9 @@ class Store {
 
     s.questionState = 'revealed';
     
+    let correctCount = 0;
+    const totalPlayers = s.players.size;
+
     for (const [pid, p] of s.players) {
       const ans = s.currentAnswers.get(pid);
       if (ans) {
@@ -137,14 +141,31 @@ class Store {
         p.streak = ans.newStreak;
         p.maxStreak = Math.max(p.maxStreak || 0, p.streak);
         p.totalAnswers++;
-        if (ans.correct) p.correctCount++;
+        if (ans.correct) {
+          p.correctCount++;
+          correctCount++;
+        }
       } else {
         s.currentAnswers.set(pid, { playerId: pid, choice: null, correct: false, points: 0, noAnswer: true });
         p.streak = 0;
         p.totalAnswers++;
       }
-      p.activeDouble = false; // Reset double points setiap ganti soal
+      p.activeDouble = false;
     }
+
+    // FITUR BARU: Simpan statistik soal ini
+    const bank = this.banks.get(s.bankId);
+    const q = bank.questions[s.currentQuestionIndex];
+    const wrongCount = totalPlayers - correctCount;
+    s.questionStats[s.currentQuestionIndex] = {
+      index: s.currentQuestionIndex,
+      text: q.text,
+      total: totalPlayers,
+      correct: correctCount,
+      wrong: wrongCount,
+      accuracy: totalPlayers > 0 ? Math.round((correctCount / totalPlayers) * 100) : 0
+    };
+
     return s;
   }
   endSession(id) {
@@ -172,7 +193,7 @@ class Store {
       id: 'p_' + nid(), name: (name || 'Anonim').trim().slice(0, 24) || 'Anonim',
       score: 0, streak: 0, maxStreak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(),
       online: true, team,
-      powerups: { fifty: 1, double: 1 }, // Kuota bantuan awal
+      powerups: { fifty: 1, double: 1 },
       activeDouble: false
     };
     s.players.set(player.id, player);
@@ -191,7 +212,6 @@ class Store {
     return s;
   }
 
-  // FITUR BARU: Gunakan Power-Up
   usePowerup(sessionId, playerId, type) {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Sesi tidak ditemukan');
@@ -204,7 +224,6 @@ class Store {
       
       const bank = this.banks.get(s.bankId);
       const q = bank.questions[s.currentQuestionIndex];
-      // Cari 2 opsi yang salah
       const wrongIndices = [0,1,2,3].filter(i => i !== q.correctIndex);
       wrongIndices.sort(() => Math.random() - 0.5);
       return { ok: true, hidden: wrongIndices.slice(0, 2) };
@@ -237,11 +256,8 @@ class Store {
     const timeLimit = s.questionEndAt - s.questionStartAt;
     const result = this._score({ correct, timeUsed, timeLimit, streak: p.streak });
 
-    // Terapkan penggandaan poin jika aktif
     let finalPoints = result.points;
-    if (p.activeDouble) {
-      finalPoints = finalPoints * 2;
-    }
+    if (p.activeDouble) finalPoints = finalPoints * 2;
 
     s.currentAnswers.set(playerId, { 
       playerId, choice, submittedAt: Date.now(), correct, 
@@ -345,11 +361,19 @@ class Store {
       }
     }
 
+    // FITUR BARU: Ambil 3 soal tersulit
+    const validStats = s.questionStats.filter(Boolean);
+    const hardestQuestions = [...validStats]
+      .sort((a, b) => b.wrong - a.wrong) // Urutkan dari yang paling banyak salah
+      .slice(0, 3)
+      .filter(q => q.wrong > 0); // Hanya tampilkan jika ada yang salah
+
     return {
       sessionId: s.id, pin: s.pin, hostName: s.hostName, bankName: bank.name,
       totalQuestions: bank.questions.length, startedAt: s.createdAt, endedAt: s.endedAt,
       teamMode: s.teamMode, teamScores: s.teamMode ? teamScores : null,
       players: playersWithBadges,
+      hardestQuestions, // Masukkan ke laporan
     };
   }
 }

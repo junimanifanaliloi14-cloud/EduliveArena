@@ -222,7 +222,8 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               ⬇️ Download CSV (Excel)
             </button>
           </div>
-          <div className="overflow-x-auto">
+          
+          <div className="overflow-x-auto mb-8">
             <table className="w-full text-sm">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
@@ -261,6 +262,34 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               </tbody>
             </table>
           </div>
+
+          {/* FITUR BARU: ANALITIK SOAL TERSUSAH */}
+          {report.hardestQuestions && report.hardestQuestions.length > 0 && (
+            <div className="border-t border-white/10 pt-6">
+              <h3 className="font-semibold text-lg text-rose-400 mb-4 flex items-center gap-2">
+                <span>🚨</span> Analisis Soal Tersulit
+              </h3>
+              <div className="space-y-3">
+                {report.hardestQuestions.map((q: any, idx: number) => {
+                  const wrongPct = q.total > 0 ? Math.round((q.wrong / q.total) * 100) : 0;
+                  return (
+                    <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded-xl">
+                      <div className="flex justify-between items-start gap-4 mb-2">
+                        <div className="font-medium text-sm text-slate-200">{q.text}</div>
+                        <div className="text-xs text-slate-400 whitespace-nowrap">
+                          {q.wrong} dari {q.total} murid salah
+                        </div>
+                      </div>
+                      <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-rose-500" style={{ width: `${wrongPct}%` }} />
+                      </div>
+                      <div className="text-right text-xs text-rose-400 mt-1 font-mono">{wrongPct}% Salah</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </section>
       )}
     </main>
