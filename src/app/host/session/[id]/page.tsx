@@ -25,6 +25,17 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     setBusy(null);
   }
 
+  async function triggerMockGift() {
+    if (!state) return;
+    const randomUser = ['@budi', '@santi', '@andi', '@rina'][Math.floor(Math.random() * 4)];
+    const randomGift = ['Mawar 🌹', 'Kue 🎂', 'Mahkota 👑', 'Roket 🚀'][Math.floor(Math.random() * 4)];
+    
+    await fetch('/api/mock/gift', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: state.session.pin, username: randomUser, giftName: randomGift }),
+    });
+  }
+
   async function kickPlayer(playerId: string, playerName: string) {
     if (!confirm(`Tendang ${playerName} dari sesi ini?`)) return;
     setBusy('kick_' + playerId);
@@ -119,7 +130,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
       <section className="card">
         <h2 className="font-semibold mb-3">Kontrol</h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           {s.status === 'lobby' && (
             <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">
               {busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}
@@ -145,6 +156,13 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               {busy === 'end' ? '...' : 'Akhiri Sesi'}
             </button>
           )}
+
+          {/* TOMBOL TEST GIFT */}
+          <div className="border-l border-white/20 pl-2 ml-2">
+            <button onClick={triggerMockGift} className="btn-ghost bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 text-sm">
+              🎁 Test Gift
+            </button>
+          </div>
         </div>
       </section>
 
@@ -263,7 +281,6 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
             </table>
           </div>
 
-          {/* FITUR BARU: ANALITIK SOAL TERSUSAH */}
           {report.hardestQuestions && report.hardestQuestions.length > 0 && (
             <div className="border-t border-white/10 pt-6">
               <h3 className="font-semibold text-lg text-rose-400 mb-4 flex items-center gap-2">

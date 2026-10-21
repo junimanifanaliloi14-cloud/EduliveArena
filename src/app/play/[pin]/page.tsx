@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, use } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { PublicState } from '@/lib/types';
 import { initAudio, playCorrect, playWrong } from '@/lib/sound';
+import confetti from 'canvas-confetti';
 
 export default function PlayPage({ params }: { params: Promise<{ pin: string }> }) {
   const { pin } = use(params);
@@ -19,8 +20,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [isMuted, setIsMuted] = useState(false);
   const [finalReport, setFinalReport] = useState<any>(null);
   const [lastEmojiTime, setLastEmojiTime] = useState(0);
-
-  // State Power-Up
   const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
 
   const [now, setNow] = useState(Date.now());
@@ -35,7 +34,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   useEffect(() => {
     if (state?.session.currentQuestionIndex !== undefined) {
       setMyAnswer(null);
-      setHiddenOptions([]); // Reset 50:50 tiap ganti soal
+      setHiddenOptions([]);
       lastPlayedStateRef.current = '';
     }
   }, [state?.session.currentQuestionIndex]);
@@ -85,6 +84,37 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       setFinalReport(report);
       sessionStorage.removeItem('edulive_session');
       sessionStorage.removeItem('edulive_player');
+      
+      // Konfeti jika murid masuk 3 besar
+      const myData = report.players.find((p: any) => p.id === myPlayer?.id);
+      const isWinner = myData?.badges.some((b: any) => ['🥇', '🥈', '🥉'].includes(b.icon));
+      
+      if (isWinner) {
+        const duration = 3000;
+        const end = Date.now() + duration;
+
+        const frame = () => {
+          confetti({
+            particleCount: 5,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0 },
+            colors: ['#f97316', '#eab308', '#3b82f6']
+          });
+          confetti({
+            particleCount: 5,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1 },
+            colors: ['#f97316', '#eab308', '#3b82f6']
+          });
+
+          if (Date.now() < end) {
+            requestAnimationFrame(frame);
+          }
+        };
+        frame();
+      }
     });
 
     socket.on('player:state', (ps: any) => {
@@ -101,7 +131,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     });
 
     return () => { socket.disconnect(); };
-  }, []);
+  }, [myPlayer?.id]); // Tambahkan dependency myPlayer.id agar konfeti akurat
 
   async function join() {
     if (!name.trim() || !socketRef.current) return;
@@ -273,7 +303,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             </div>
           ) : (
             <>
-              {/* TOMBOL POWER-UP */}
               {!myAnswer && !isTimeUp && (
                 <div className="flex gap-2 justify-center py-2">
                   <button onClick={useFiftyFifty} disabled={myPlayer?.powerups?.fifty <= 0}
@@ -288,7 +317,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
               )}
 
               {q.options.map((o, i) => {
-                if (hiddenOptions.includes(i)) return null; // Sembunyikan opsi jika 50:50 aktif
+                if (hiddenOptions.includes(i)) return null;
                 const isMine = myAnswer?.choice === i;
                 const disabled = !!myAnswer || submitting || isTimeUp;
                 return (
