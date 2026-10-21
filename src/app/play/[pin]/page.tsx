@@ -98,7 +98,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
 
   function sendEmoji(emoji: string) {
     if (!socketRef.current) return;
-    // Cooldown 2 detik agar tidak spam
     if (Date.now() - lastEmojiTime < 2000) return;
     setLastEmojiTime(Date.now());
     socketRef.current.emit('player:emoji', { emoji });
@@ -148,13 +147,22 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const isTimeUp = answerLeft === 0;
 
   const myFinalData = finalReport?.players?.find((p: any) => p.id === myPlayer?.id);
+  const myTeam = myPlayer?.team;
+  const isTeamMode = state?.session.teamMode;
 
   return (
     <main className="min-h-screen px-4 py-6 max-w-md mx-auto relative pb-24">
       <header className="flex items-center justify-between mb-4">
         <div>
           <div className="text-xs text-slate-400">Halo,</div>
-          <div className="font-semibold">{myPlayer?.name}</div>
+          <div className="font-semibold flex items-center gap-2">
+            {myPlayer?.name}
+            {isTeamMode && myTeam && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${myTeam === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                Tim {myTeam === 'A' ? 'Merah' : 'Biru'}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <button onClick={() => setIsMuted(!isMuted)} className="text-2xl" title={isMuted ? 'Nyalakan Suara' : 'Matikan Suara'}>
@@ -267,7 +275,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <ol className="space-y-1">
             {state.leaderboard.slice(0, 5).map(r => (
               <li key={r.id} className={`flex justify-between text-sm px-2 py-1.5 rounded ${r.id === myPlayer?.id ? 'bg-brand-500/15' : ''}`}>
-                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name}</span>
+                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name} {isTeamMode && <span className="text-[10px] text-slate-500">({r.team === 'A' ? 'Merah' : 'Biru'})</span>}</span>
                 <span className="font-mono">{r.score}</span>
               </li>
             ))}
@@ -275,7 +283,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
         </div>
       )}
 
-      {/* PANEL EMOJI (Fixed di bawah) */}
       {state?.session.status !== 'ended' && (
         <div className="fixed bottom-0 left-0 right-0 p-3 bg-slate-900/90 backdrop-blur border-t border-white/10 flex justify-center gap-4 z-50">
           {['👏', '😂', '😮', '🔥', '💯'].map(emoji => (

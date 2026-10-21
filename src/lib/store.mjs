@@ -41,7 +41,7 @@ class Store {
     return bank;
   }
 
-  createSession({ bankId, hostName, timeLimitSec, autoReveal = true }) {
+  createSession({ bankId, hostName, timeLimitSec, autoReveal = true, teamMode = false }) {
     const bank = this.banks.get(bankId);
     if (!bank) throw new Error('Bank tidak ditemukan');
     const session = {
@@ -49,6 +49,7 @@ class Store {
       hostName: hostName || 'Guru', status: 'lobby',
       timeLimitSec: timeLimitSec || 20,
       autoReveal: autoReveal,
+      teamMode: teamMode,
       currentQuestionIndex: -1, questionState: 'idle',
       questionStartAt: null, questionEndAt: null,
       players: new Map(), currentAnswers: new Map(),
@@ -134,7 +135,7 @@ class Store {
       if (ans) {
         p.score += ans.points;
         p.streak = ans.newStreak;
-        p.maxStreak = Math.max(p.maxStreak || 0, p.streak); // Lacak streak tertinggi
+        p.maxStreak = Math.max(p.maxStreak || 0, p.streak);
         p.totalAnswers++;
         if (ans.correct) p.correctCount++;
       } else {
@@ -158,10 +159,19 @@ class Store {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Sesi tidak ditemukan');
     if (s.status === 'ended') throw new Error('Sesi telah berakhir');
+    
+    // Logika Pembagian Tim
+    let team = null;
+    if (s.teamMode) {
+      const countA = Array.from(s.players.values()).filter(p => p.team === 'A').length;
+      const countB = Array.from(s.players.values()).filter(p => p.team === 'B').length;
+      team = countA <= countB ? 'A' : 'B';
+    }
+
     const player = {
       id: 'p_' + nid(), name: (name || 'Anonim').trim().slice(0, 24) || 'Anonim',
       score: 0, streak: 0, maxStreak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(),
-      online: true,
+      online: true, team
     };
     s.players.set(player.id, player);
     return player;
@@ -218,10 +228,10 @@ class Store {
 
     const leaderboard = Array.from(s.players.values())
       .sort((a, b) => b.score - a.score).slice(0, 20)
-      .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, score: p.score, streak: p.streak }));
+      .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, score: p.score, streak: p.streak, team: p.team }));
 
     const allPlayers = Array.from(s.players.values())
-      .map(p => ({ id: p.id, name: p.name, score: p.score, online: p.online }));
+      .map(p => ({ id: p.id, name: p.name, score: p.score, online: p.online, team: p.team }));
 
     const answerStats = { total: 0, correct: 0, byChoice: [0, 0, 0, 0] };
     if (s.questionState !== 'idle') {
@@ -233,11 +243,21 @@ class Store {
     }
     const revealCorrect = s.questionState === 'revealed' && q ? q.correctIndex : null;
 
+    // Hitung Skor Tim
+    let teamScores = { A: 0, B: 0 };
+    if (s.teamMode) {
+      for (const p of s.players.values()) {
+        if (p.team === 'A') teamScores.A += p.score;
+        if (p.team === 'B') teamScores.B += p.score;
+      }
+    }
+
     return {
       session: {
         id: s.id, pin: s.pin, hostName: s.hostName, status: s.status,
         questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex,
         totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal,
+        teamMode: s.teamMode, teamScores: s.teamMode ? teamScores : null,
         questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now(),
       },
       question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: s.timeLimitSec, correctIndex: revealCorrect } : null,
@@ -250,7 +270,7 @@ class Store {
     const p = s.players.get(playerId);
     if (!p) return null;
     return {
-      player: { id: p.id, name: p.name, score: p.score, streak: p.streak },
+      player: { id: p.id, name: p.name, score: p.score, streak: p.streak, team: p.team },
       myAnswer: s.currentAnswers.get(playerId) || null,
     };
   }
@@ -261,7 +281,6 @@ class Store {
     
     const sortedPlayers = Array.from(s.players.values()).sort((a, b) => b.score - a.score);
     
-    // Kalkulasi Badge
     const playersWithBadges = sortedPlayers.map((p, index) => {
       const badges = [];
       if (index === 0) badges.push({ icon: '🥇', label: 'Juara 1' });
@@ -278,13 +297,22 @@ class Store {
       return {
         id: p.id, name: p.name, score: p.score, correct: p.correctCount, total: p.totalAnswers,
         accuracy: p.totalAnswers ? Math.round((p.correctCount / p.totalAnswers) * 100) : 0,
-        badges
+        team: p.team, badges
       };
     });
+
+    let teamScores = { A: 0, B: 0 };
+    if (s.teamMode) {
+      for (const p of sortedPlayers) {
+        if (p.team === 'A') teamScores.A += p.score;
+        if (p.team === 'B') teamScores.B += p.score;
+      }
+    }
 
     return {
       sessionId: s.id, pin: s.pin, hostName: s.hostName, bankName: bank.name,
       totalQuestions: bank.questions.length, startedAt: s.createdAt, endedAt: s.endedAt,
+      teamMode: s.teamMode, teamScores: s.teamMode ? teamScores : null,
       players: playersWithBadges,
     };
   }

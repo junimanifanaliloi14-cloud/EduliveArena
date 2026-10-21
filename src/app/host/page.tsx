@@ -13,10 +13,10 @@ export default function HostHome() {
   const [hostName, setHostName] = useState('Bu Guru');
   const [timeLimit, setTimeLimit] = useState(20);
   const [autoReveal, setAutoReveal] = useState(true);
+  const [teamMode, setTeamMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // State untuk Import
   const [isImporting, setIsImporting] = useState(false);
   const [newBankName, setNewBankName] = useState('');
   const [parsedQuestions, setParsedQuestions] = useState<any[]>([]);
@@ -38,17 +38,15 @@ export default function HostHome() {
     setLoading(true);
     const res = await fetch('/api/sessions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bankId: selected, hostName, timeLimitSec: timeLimit, autoReveal }),
+      body: JSON.stringify({ bankId: selected, hostName, timeLimitSec: timeLimit, autoReveal, teamMode }),
     });
     const data = await res.json();
     if (data.session) router.push('/host/session/' + data.session.id);
     else setLoading(false);
   }
 
-  // Fungsi untuk memproses data mentah (dari CSV atau Excel)
   function processQuestions(rawData: any[]) {
     const questions = rawData.map((row: any, index: number) => {
-      // Normalisasi key (ubah ke huruf kecil dan ganti spasi jadi underscore)
       const normalizedRow: any = {};
       Object.keys(row).forEach(k => {
         normalizedRow[k.toLowerCase().replace(/\s+/g, '_')] = row[k];
@@ -69,10 +67,10 @@ export default function HostHome() {
         correctIndex: correctMap[answerStr] !== undefined ? correctMap[answerStr] : 0,
         timeLimitSec: 20
       };
-    }).filter(q => q.text !== 'Soal tanpa teks'); // Buang baris kosong
+    }).filter(q => q.text !== 'Soal tanpa teks');
 
     if (questions.length === 0) {
-      alert('File kosong atau format kolom tidak sesuai. Pastikan ada kolom: soal, opsi_a, opsi_b, opsi_c, opsi_d, jawaban.');
+      alert('File kosong atau format kolom tidak sesuai.');
       return;
     }
     
@@ -87,7 +85,6 @@ export default function HostHome() {
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
 
     if (isExcel) {
-      // Baca Excel menggunakan SheetJS
       const reader = new FileReader();
       reader.onload = (evt) => {
         const bstr = evt.target?.result;
@@ -99,7 +96,6 @@ export default function HostHome() {
       };
       reader.readAsBinaryString(file);
     } else {
-      // Baca CSV menggunakan PapaParse
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
@@ -115,11 +111,7 @@ export default function HostHome() {
     
     const res = await fetch('/api/banks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        name: newBankName, 
-        subject: 'Umum', 
-        questions: parsedQuestions 
-      }),
+      body: JSON.stringify({ name: newBankName, subject: 'Umum', questions: parsedQuestions }),
     });
     
     if (res.ok) {
@@ -192,13 +184,19 @@ export default function HostHome() {
               <option value={60}>60 Detik (Hitung Manual)</option>
             </select>
           </div>
-          <div className="flex flex-col justify-center pt-2">
+          <div className="flex flex-col gap-3 pt-1">
             <label className="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" checked={autoReveal} onChange={e => setAutoReveal(e.target.checked)}
                 className="h-5 w-5 rounded bg-white/10 border-white/20 text-brand-500 focus:ring-brand-500 cursor-pointer" />
               <div>
-                <div className="font-medium">Buka Jawaban Otomatis</div>
-                <div className="text-xs text-slate-400">Tampilkan jawaban benar saat waktu habis</div>
+                <div className="font-medium text-sm">Buka Jawaban Otomatis</div>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={teamMode} onChange={e => setTeamMode(e.target.checked)}
+                className="h-5 w-5 rounded bg-white/10 border-white/20 text-brand-500 focus:ring-brand-500 cursor-pointer" />
+              <div>
+                <div className="font-medium text-sm">Aktifkan Mode Tim (Merah vs Biru)</div>
               </div>
             </label>
           </div>

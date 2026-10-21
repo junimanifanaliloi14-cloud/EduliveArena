@@ -46,21 +46,14 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
     }
   }, [state?.session.questionState, state?.session.currentQuestionIndex]);
 
-  // Efek Emoji Melayang
   useEffect(() => {
-    const socket = (window as any).__socket_conn || null; // fallback
-    // Kita menggunakan socket yang sama dari useSessionSocket
-    // Tapi karena useSessionSocket tidak mengekspos socket secara global, kita perlu membuat listener manual di sini.
-    // (Sebenarnya lebih baik jika useSessionSocket mengembalikan socket, tapi kita akali dengan import io)
     import('socket.io-client').then(({ io }) => {
       const s = io({ path: '/socket.io', transports: ['websocket', 'polling'] });
-      s.emit('host:subscribe', { sessionId: id }); // Supaya masuk ke room
+      s.emit('host:subscribe', { sessionId: id });
       
       s.on('overlay:emoji', ({ emoji, id: emojiId }) => {
-        const xPos = Math.random() * 80 + 10; // Posisi X acak antara 10% - 90%
+        const xPos = Math.random() * 80 + 10;
         setEmojis(prev => [...prev, { id: emojiId, emoji, x: xPos }]);
-        
-        // Hapus dari state setelah 3 detik agar memori tidak penuh
         setTimeout(() => {
           setEmojis(prev => prev.filter(e => e.id !== emojiId));
         }, 3000);
@@ -83,8 +76,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
 
   return (
     <div className="min-h-screen p-6 bg-transparent relative overflow-hidden">
-      
-      {/* LAYER EMOJI MELAYANG */}
       <div className="fixed inset-0 pointer-events-none z-50">
         <AnimatePresence>
           {emojis.map(e => (
@@ -103,9 +94,24 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
         </AnimatePresence>
       </div>
 
-      {/* KONTEN UTAMA */}
       <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
         <div className="col-span-2 card min-h-[380px] flex flex-col relative overflow-hidden">
+          
+          {/* SKOR TIM (Jika Mode Tim Aktif) */}
+          {s.teamMode && s.teamScores && (
+            <div className="flex gap-4 mb-4 bg-slate-800/80 p-3 rounded-xl border border-white/10 shadow-lg animate-slide-up">
+              <div className="flex-1 bg-red-500/20 border border-red-500/30 rounded-lg p-2 flex items-center justify-between">
+                <span className="font-bold text-red-400 text-lg">TIM MERAH</span>
+                <span className="font-mono text-2xl font-bold text-white">{s.teamScores.A}</span>
+              </div>
+              <div className="flex items-center text-slate-500 font-bold italic">VS</div>
+              <div className="flex-1 bg-blue-500/20 border border-blue-500/30 rounded-lg p-2 flex items-center justify-between">
+                <span className="font-bold text-blue-400 text-lg">TIM BIRU</span>
+                <span className="font-mono text-2xl font-bold text-white">{s.teamScores.B}</span>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between text-xs text-slate-400 uppercase tracking-wider">
             <span>{s.bankName}</span>
             <span>Soal {s.currentQuestionIndex + 1} / {s.totalQuestions}</span>
@@ -182,6 +188,11 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                   <span className="flex items-center gap-2">
                     <span className="w-5 text-center font-mono font-bold text-brand-500">{r.rank}</span>
                     <span className="font-medium">{r.name}</span>
+                    {s.teamMode && (
+                      <span className={`text-[10px] font-bold ${r.team === 'A' ? 'text-red-400' : 'text-blue-400'}`}>
+                        {r.team === 'A' ? 'M' : 'B'}
+                      </span>
+                    )}
                     {r.rank === 1 && <span className="text-amber-400">👑</span>}
                   </span>
                   <span className="font-mono text-slate-200">{r.score}</span>
