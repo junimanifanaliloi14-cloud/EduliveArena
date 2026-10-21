@@ -20,6 +20,9 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [finalReport, setFinalReport] = useState<any>(null);
   const [lastEmojiTime, setLastEmojiTime] = useState(0);
 
+  // State Power-Up
+  const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
+
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
   const lastPlayedStateRef = useRef<string>('');
@@ -32,6 +35,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   useEffect(() => {
     if (state?.session.currentQuestionIndex !== undefined) {
       setMyAnswer(null);
+      setHiddenOptions([]); // Reset 50:50 tiap ganti soal
       lastPlayedStateRef.current = '';
     }
   }, [state?.session.currentQuestionIndex]);
@@ -60,15 +64,12 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     
     socket.on('connect', () => {
       setConnected(true);
-      
-      // FITUR BARU: Cek jika sesi masih tersimpan di tab browser
       const savedSession = sessionStorage.getItem('edulive_session');
       const savedPlayer = sessionStorage.getItem('edulive_player');
       if (savedSession && savedPlayer) {
         socket.emit('player:reconnect', { sessionId: savedSession, playerId: savedPlayer }, (res: any) => {
-          if (res.ok) {
-            setJoined(true);
-          } else {
+          if (res.ok) setJoined(true);
+          else {
             setJoined(false);
             sessionStorage.removeItem('edulive_session');
             sessionStorage.removeItem('edulive_player');
@@ -110,7 +111,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       if (res?.ok) { 
         setJoined(true); 
         setMyPlayer(res.player); 
-        // Simpan data untuk auto-reconnect
         sessionStorage.setItem('edulive_session', res.sessionId);
         sessionStorage.setItem('edulive_player', res.player.id);
       }
@@ -133,6 +133,21 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     if (Date.now() - lastEmojiTime < 2000) return;
     setLastEmojiTime(Date.now());
     socketRef.current.emit('player:emoji', { emoji });
+  }
+
+  function useFiftyFifty() {
+    if (!socketRef.current || !myPlayer?.powerups || myPlayer.powerups.fifty <= 0) return;
+    socketRef.current.emit('player:powerup', { type: 'fifty' }, (res: any) => {
+      if (res.ok) setHiddenOptions(res.hidden);
+      else setError(res.error);
+    });
+  }
+
+  function useDoublePoints() {
+    if (!socketRef.current || !myPlayer?.powerups || myPlayer.powerups.double <= 0) return;
+    socketRef.current.emit('player:powerup', { type: 'double' }, (res: any) => {
+      if (!res.ok) setError(res.error);
+    });
   }
 
   if (kicked) {
@@ -258,7 +273,22 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             </div>
           ) : (
             <>
+              {/* TOMBOL POWER-UP */}
+              {!myAnswer && !isTimeUp && (
+                <div className="flex gap-2 justify-center py-2">
+                  <button onClick={useFiftyFifty} disabled={myPlayer?.powerups?.fifty <= 0}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${myPlayer?.powerups?.fifty > 0 ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30' : 'bg-white/5 border-white/10 text-slate-600 grayscale'}`}>
+                    ⚖️ 50:50 ({myPlayer?.powerups?.fifty || 0})
+                  </button>
+                  <button onClick={useDoublePoints} disabled={myPlayer?.powerups?.double <= 0 || myPlayer?.activeDouble}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm font-semibold transition ${myPlayer?.powerups?.double > 0 && !myPlayer?.activeDouble ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30' : 'bg-white/5 border-white/10 text-slate-600 grayscale'}`}>
+                    ✨ 2x Poin ({myPlayer?.activeDouble ? 'Aktif' : (myPlayer?.powerups?.double || 0)})
+                  </button>
+                </div>
+              )}
+
               {q.options.map((o, i) => {
+                if (hiddenOptions.includes(i)) return null; // Sembunyikan opsi jika 50:50 aktif
                 const isMine = myAnswer?.choice === i;
                 const disabled = !!myAnswer || submitting || isTimeUp;
                 return (

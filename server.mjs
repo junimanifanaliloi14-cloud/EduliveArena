@@ -42,7 +42,6 @@ io.on('connection', (socket) => {
     } catch (e) { ack?.({ ok: false, error: e.message }); }
   });
 
-  // FITUR BARU: Auto-Reconnect
   socket.on('player:reconnect', ({ sessionId, playerId }, ack) => {
     try {
       const session = store.getSession(sessionId);
@@ -60,6 +59,19 @@ io.on('connection', (socket) => {
       if (playerState) socket.emit('player:state', playerState);
       
       ack?.({ ok: true });
+    } catch (e) {
+      ack?.({ ok: false, error: e.message });
+    }
+  });
+
+  // FITUR BARU: Power-up
+  socket.on('player:powerup', ({ type }, ack) => {
+    const { sessionId, playerId } = socket.data;
+    if (!sessionId || !playerId) return ack?.({ ok: false, error: 'Belum join' });
+    try {
+      const result = store.usePowerup(sessionId, playerId, type);
+      socket.emit('player:state', store.getPlayerState(sessionId, playerId));
+      ack?.({ ok: true, ...result });
     } catch (e) {
       ack?.({ ok: false, error: e.message });
     }

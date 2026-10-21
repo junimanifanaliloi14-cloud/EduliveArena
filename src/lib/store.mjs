@@ -143,6 +143,7 @@ class Store {
         p.streak = 0;
         p.totalAnswers++;
       }
+      p.activeDouble = false; // Reset double points setiap ganti soal
     }
     return s;
   }
@@ -160,7 +161,6 @@ class Store {
     if (!s) throw new Error('Sesi tidak ditemukan');
     if (s.status === 'ended') throw new Error('Sesi telah berakhir');
     
-    // Logika Pembagian Tim
     let team = null;
     if (s.teamMode) {
       const countA = Array.from(s.players.values()).filter(p => p.team === 'A').length;
@@ -171,7 +171,9 @@ class Store {
     const player = {
       id: 'p_' + nid(), name: (name || 'Anonim').trim().slice(0, 24) || 'Anonim',
       score: 0, streak: 0, maxStreak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(),
-      online: true, team
+      online: true, team,
+      powerups: { fifty: 1, double: 1 }, // Kuota bantuan awal
+      activeDouble: false
     };
     s.players.set(player.id, player);
     return player;
@@ -187,6 +189,35 @@ class Store {
     s.players.delete(playerId);
     s.currentAnswers.delete(playerId);
     return s;
+  }
+
+  // FITUR BARU: Gunakan Power-Up
+  usePowerup(sessionId, playerId, type) {
+    const s = this.sessions.get(sessionId);
+    if (!s) throw new Error('Sesi tidak ditemukan');
+    const p = s.players.get(playerId);
+    if (!p) throw new Error('Pemain tidak ditemukan');
+    
+    if (type === 'fifty') {
+      if (p.powerups.fifty <= 0) throw new Error('Kuota 50:50 habis');
+      p.powerups.fifty--;
+      
+      const bank = this.banks.get(s.bankId);
+      const q = bank.questions[s.currentQuestionIndex];
+      // Cari 2 opsi yang salah
+      const wrongIndices = [0,1,2,3].filter(i => i !== q.correctIndex);
+      wrongIndices.sort(() => Math.random() - 0.5);
+      return { ok: true, hidden: wrongIndices.slice(0, 2) };
+    } 
+    
+    if (type === 'double') {
+      if (p.powerups.double <= 0) throw new Error('Kuota Poin Ganda habis');
+      p.powerups.double--;
+      p.activeDouble = true;
+      return { ok: true };
+    }
+    
+    throw new Error('Tipe power-up tidak valid');
   }
 
   submitAnswer(sessionId, playerId, choice) {
@@ -206,12 +237,18 @@ class Store {
     const timeLimit = s.questionEndAt - s.questionStartAt;
     const result = this._score({ correct, timeUsed, timeLimit, streak: p.streak });
 
+    // Terapkan penggandaan poin jika aktif
+    let finalPoints = result.points;
+    if (p.activeDouble) {
+      finalPoints = finalPoints * 2;
+    }
+
     s.currentAnswers.set(playerId, { 
       playerId, choice, submittedAt: Date.now(), correct, 
-      points: result.points, newStreak: result.newStreak 
+      points: finalPoints, newStreak: result.newStreak 
     });
 
-    return { correct, points: result.points, newStreak: result.newStreak, totalScore: p.score };
+    return { correct, points: finalPoints, newStreak: result.newStreak, totalScore: p.score };
   }
   _score({ correct, timeUsed, timeLimit, streak }) {
     if (!correct) return { points: 0, newStreak: 0 };
@@ -243,7 +280,6 @@ class Store {
     }
     const revealCorrect = s.questionState === 'revealed' && q ? q.correctIndex : null;
 
-    // Hitung Skor Tim
     let teamScores = { A: 0, B: 0 };
     if (s.teamMode) {
       for (const p of s.players.values()) {
@@ -270,7 +306,7 @@ class Store {
     const p = s.players.get(playerId);
     if (!p) return null;
     return {
-      player: { id: p.id, name: p.name, score: p.score, streak: p.streak, team: p.team },
+      player: { id: p.id, name: p.name, score: p.score, streak: p.streak, team: p.team, powerups: p.powerups, activeDouble: p.activeDouble },
       myAnswer: s.currentAnswers.get(playerId) || null,
     };
   }
