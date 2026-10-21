@@ -165,12 +165,11 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const q = state?.question;
   const isShowing = state?.session.questionState === 'showing' && q;
   
-  // KALKULASI WAKTU (Bekukan jika dijeda)
   const estimatedServerNow = state?.session.isPaused ? state.session.pauseStartAt : (now - timeOffset);
   const prepareEndAt = (state?.session.questionStartAt || 0);
   const questionEndAt = (state?.session.questionEndAt || 0);
   
-  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - (now - timeOffset)) / 1000)); // Persiapan tidak bisa dijeda
+  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - (now - timeOffset)) / 1000));
   const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
   const isPreparing = prepareLeft > 0;
   const isTimeUp = answerLeft === 0;
@@ -179,8 +178,8 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const myTeam = myPlayer?.team;
   const isTeamMode = state?.session.teamMode;
   const isEliminated = myPlayer?.isEliminated;
+  const isBossBattle = state?.session.isBossBattle;
 
-  // LAYAR JIKA TERELIMINASI
   if (isEliminated && state?.session.status !== 'ended') {
     return (
       <main className="min-h-screen px-4 py-6 max-w-md mx-auto relative pb-24 flex flex-col items-center justify-center">
@@ -265,7 +264,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       {isShowing && q && (
         <div className="space-y-3 animate-slide-up relative">
           
-          {/* OVERLAY PAUSE */}
           {state.session.isPaused && (
             <div className="absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center border border-amber-500/50 animate-pop">
               <div className="text-5xl mb-2">⏸️</div>
@@ -281,6 +279,15 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
                 <span className={`font-mono text-lg font-bold ${answerLeft <= 5 ? 'text-red-400 animate-pulse' : 'text-brand-500'}`}>{answerLeft}s</span>
               )}
             </div>
+            
+            {isBossBattle && (
+              <div className="mt-2 text-center animate-pulse">
+                <span className="inline-block bg-gradient-to-r from-red-600 to-amber-600 text-white font-black px-4 py-1 rounded-full text-sm uppercase tracking-widest shadow-[0_0_15px_rgba(220,38,38,0.8)]">
+                  🔥 BOSS BATTLE - 3x Poin! 🔥
+                </span>
+              </div>
+            )}
+            
             <h2 className="text-lg font-semibold mt-2">{q.text}</h2>
           </div>
 

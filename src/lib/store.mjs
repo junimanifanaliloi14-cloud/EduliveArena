@@ -50,10 +50,10 @@ class Store {
       timeLimitSec: timeLimitSec || 20,
       autoReveal: autoReveal,
       teamMode: teamMode,
-      eliminationMode: eliminationMode, // FITUR BARU
+      eliminationMode: eliminationMode,
       currentQuestionIndex: -1, questionState: 'idle',
       questionStartAt: null, questionEndAt: null,
-      isPaused: false, pauseStartAt: null, // FITUR BARU
+      isPaused: false, pauseStartAt: null,
       players: new Map(), currentAnswers: new Map(),
       questionStats: [],
       createdAt: Date.now(), endedAt: null,
@@ -125,7 +125,6 @@ class Store {
     }
   }
 
-  // FITUR BARU: Pause & Resume
   pauseTimer(id) {
     const s = this.sessions.get(id);
     if (!s || s.questionState !== 'showing' || s.isPaused) return s;
@@ -177,14 +176,14 @@ class Store {
           p.correctCount++;
           correctCount++;
         } else if (s.eliminationMode && !p.isEliminated) {
-          p.isEliminated = true; // FITUR BARU: Eliminasi jika salah
+          p.isEliminated = true;
         }
       } else {
         s.currentAnswers.set(pid, { playerId: pid, choice: null, correct: false, points: 0, noAnswer: true });
         p.streak = 0;
         p.totalAnswers++;
         if (s.eliminationMode && !p.isEliminated) {
-          p.isEliminated = true; // FITUR BARU: Eliminasi jika tidak jawab
+          p.isEliminated = true;
         }
       }
       p.activeDouble = false;
@@ -231,7 +230,7 @@ class Store {
       online: true, team,
       powerups: { fifty: 1, double: 1 },
       activeDouble: false,
-      isEliminated: false // FITUR BARU
+      isEliminated: false
     };
     s.players.set(player.id, player);
     return player;
@@ -296,7 +295,17 @@ class Store {
     const result = this._score({ correct, timeUsed, timeLimit, streak: p.streak });
 
     let finalPoints = result.points;
-    if (p.activeDouble) finalPoints = finalPoints * 2;
+    
+    // FITUR BARU: Boss Battle Poin 3x di soal terakhir
+    const isBossBattle = s.currentQuestionIndex === bank.questions.length - 1;
+    if (correct && isBossBattle) {
+      finalPoints = finalPoints * 3;
+    }
+
+    // Terapkan penggandaan power-up
+    if (p.activeDouble) {
+      finalPoints = finalPoints * 2;
+    }
 
     s.currentAnswers.set(playerId, { 
       playerId, choice, submittedAt: Date.now(), correct, 
@@ -317,6 +326,7 @@ class Store {
     if (!s) return null;
     const bank = this.banks.get(s.bankId);
     const q = s.currentQuestionIndex >= 0 ? bank.questions[s.currentQuestionIndex] : null;
+    const isBossBattle = s.currentQuestionIndex === bank.questions.length - 1;
 
     const leaderboard = Array.from(s.players.values())
       .sort((a, b) => b.score - a.score).slice(0, 20)
@@ -349,8 +359,9 @@ class Store {
         questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex,
         totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal,
         teamMode: s.teamMode, teamScores: s.teamMode ? teamScores : null,
-        eliminationMode: s.eliminationMode, // Tambahkan ke state
+        eliminationMode: s.eliminationMode,
         isPaused: s.isPaused, pauseStartAt: s.pauseStartAt,
+        isBossBattle: isBossBattle, // FITUR BARU
         questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now(),
       },
       question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: s.timeLimitSec, correctIndex: revealCorrect } : null,

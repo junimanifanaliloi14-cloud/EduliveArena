@@ -97,10 +97,10 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
           
           <div className="w-24 flex flex-col items-center justify-start pt-6 border-r border-white/10 pr-4 mr-4">
             <div className="relative">
-              <div className="absolute -inset-1 bg-gradient-to-r from-brand-500 to-amber-500 rounded-full blur opacity-75 animate-pulse"></div>
-              <div className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">👩‍🏫</div>
+              <div className={`absolute -inset-1 rounded-full blur opacity-75 animate-pulse ${s.isBossBattle ? 'bg-gradient-to-r from-red-600 to-orange-500' : 'bg-gradient-to-r from-brand-500 to-amber-500'}`}></div>
+              <div className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">{s.isBossBattle ? '😈' : '👩‍🏫'}</div>
             </div>
-            <div className="text-[10px] text-center text-slate-400 mt-3 uppercase tracking-widest font-bold">Guru</div>
+            <div className="text-[10px] text-center text-slate-400 mt-3 uppercase tracking-widest font-bold">{s.isBossBattle ? 'BOSS' : 'Guru'}</div>
           </div>
 
           <div className="flex-1 flex flex-col">
@@ -127,7 +127,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                 ) : (
                   <div className="flex-1 flex flex-col animate-slide-up relative">
                     
-                    {/* PAUSE OVERLAY */}
                     {s.isPaused && (
                       <div className="absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center border-2 border-amber-500/50 animate-pop">
                         <div className="text-6xl mb-4">⏸️</div>
@@ -135,7 +134,15 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                       </div>
                     )}
 
-                    <div className="text-center mt-4 flex-1 flex items-center justify-center">
+                    {s.isBossBattle && (
+                      <div className="text-center mb-2 animate-pulse">
+                        <span className="inline-block bg-gradient-to-r from-red-600 to-amber-600 text-white font-black px-6 py-1.5 rounded-full text-lg uppercase tracking-widest shadow-[0_0_20px_rgba(220,38,38,0.8)] border border-red-400">
+                          🔥 BOSS BATTLE - 3x POIN! 🔥
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="text-center mt-2 flex-1 flex items-center justify-center">
                       <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
                     </div>
                     
