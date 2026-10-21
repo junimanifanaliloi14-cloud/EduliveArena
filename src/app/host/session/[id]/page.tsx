@@ -35,6 +35,38 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     setBusy(null);
   }
 
+  // FUNGSI EXPORT CSV
+  function downloadCSV() {
+    if (!report) return;
+    
+    const headers = ['Peringkat', 'Nama', 'Skor', 'Jawaban Benar', 'Total Jawaban', 'Akurasi (%)', 'Pencapaian'];
+    const rows = report.players.map((p: any, i: number) => {
+      const badgeStr = p.badges.map((b: any) => `${b.icon} ${b.label}`).join(' | ');
+      // Gunakan tanda kutip ganda (") agar nama yang mengandung koma tidak merusak format CSV
+      return [
+        i + 1,
+        `"${p.name}"`,
+        p.score,
+        p.correct,
+        p.total,
+        p.accuracy,
+        `"${badgeStr}"`
+      ].join(',');
+    });
+
+    // Tambahkan \uFEFF agar Excel bisa membaca karakter khusus (emoji) dengan benar
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Laporan_Kuis_${report.bankName.replace(/\s+/g, '_')}_PIN_${report.pin}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   if (!state) return <div className="p-10 text-slate-400">Memuat sesi...</div>;
   const s = state.session;
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -170,37 +202,46 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
       {report && (
         <section className="card animate-pop">
-          <h2 className="font-semibold mb-2">Laporan Akhir</h2>
-          <div className="text-sm text-slate-400 mb-4">PIN {report.pin} - {report.totalQuestions} soal - {report.players.length} murid</div>
-          <table className="w-full text-sm">
-            <thead className="text-slate-400 border-b border-white/10">
-              <tr>
-                <th className="text-left py-2">#</th>
-                <th className="text-left">Nama</th>
-                <th className="text-left">Pencapaian</th>
-                <th className="text-right">Skor</th>
-                <th className="text-right">Akurasi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.players.map((p: any, i: number) => (
-                <tr key={p.id} className="border-b border-white/5">
-                  <td className="py-3">{i + 1}</td>
-                  <td>{p.name}</td>
-                  <td>
-                    <div className="flex gap-1">
-                      {p.badges.map((b: any, idx: number) => (
-                        <span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>
-                      ))}
-                      {p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}
-                    </div>
-                  </td>
-                  <td className="text-right font-mono">{p.score}</td>
-                  <td className="text-right">{p.accuracy}%</td>
+          <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
+            <div>
+              <h2 className="font-semibold text-lg">Laporan Akhir</h2>
+              <div className="text-sm text-slate-400">PIN {report.pin} - {report.totalQuestions} soal - {report.players.length} murid</div>
+            </div>
+            <button onClick={downloadCSV} className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-sm px-4">
+              ⬇️ Download CSV (Excel)
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-slate-400 border-b border-white/10">
+                <tr>
+                  <th className="text-left py-2">#</th>
+                  <th className="text-left">Nama</th>
+                  <th className="text-left">Pencapaian</th>
+                  <th className="text-right">Skor</th>
+                  <th className="text-right">Akurasi</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {report.players.map((p: any, i: number) => (
+                  <tr key={p.id} className="border-b border-white/5">
+                    <td className="py-3">{i + 1}</td>
+                    <td>{p.name}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        {p.badges.map((b: any, idx: number) => (
+                          <span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>
+                        ))}
+                        {p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}
+                      </div>
+                    </td>
+                    <td className="text-right font-mono">{p.score}</td>
+                    <td className="text-right">{p.accuracy}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </main>
