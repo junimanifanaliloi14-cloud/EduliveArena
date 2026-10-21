@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, use } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { PublicState } from '@/lib/types';
-import { initAudio, playCorrect, playWrong } from '@/lib/sound';
+import { initAudio, playCorrect, playWrong, playTick } from '@/lib/sound';
 import confetti from 'canvas-confetti';
 
 export default function PlayPage({ params }: { params: Promise<{ pin: string }> }) {
@@ -25,12 +25,13 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
   const lastPlayedStateRef = useRef<string>('');
+  const lastTickedRef = useRef<number>(-1);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 100); return () => clearInterval(t); }, []);
 
   useEffect(() => {
     if (state?.session.currentQuestionIndex !== undefined) {
-      setMyAnswer(null); setHiddenOptions([]); lastPlayedStateRef.current = '';
+      setMyAnswer(null); setHiddenOptions([]); lastPlayedStateRef.current = ''; lastTickedRef.current = -1;
     }
   }, [state?.session.currentQuestionIndex]);
 
@@ -38,6 +39,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     if (state?.session?.serverNow) setTimeOffset(Date.now() - state.session.serverNow);
   }, [state?.session?.serverNow]);
 
+  // Efek Suara Jawaban
   useEffect(() => {
     if (state?.session.questionState === 'revealed' && myAnswer) {
       const stateId = `${state.session.currentQuestionIndex}-${myAnswer.choice}`;
@@ -48,6 +50,26 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       }
     }
   }, [state?.session.questionState, myAnswer, isMuted, state?.session.currentQuestionIndex]);
+
+  // Kalkulasi Waktu (dipindah ke atas agar bisa diakses efek tick)
+  const estimatedServerNow = state?.session.isPaused ? state.session.pauseStartAt : (now - timeOffset);
+  const prepareEndAt = (state?.session.questionStartAt || 0);
+  const questionEndAt = (state?.session.questionEndAt || 0);
+  
+  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - (now - timeOffset)) / 1000));
+  const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
+  const isPreparing = prepareLeft > 0;
+  const isTimeUp = answerLeft === 0;
+
+  // FITUR BARU: Suara Detak Waktu
+  useEffect(() => {
+    if (state?.session.questionState === 'showing' && !isPreparing && !state?.session.isPaused && !isMuted) {
+      if (answerLeft > 0 && answerLeft <= 5 && lastTickedRef.current !== answerLeft) {
+        lastTickedRef.current = answerLeft;
+        playTick();
+      }
+    }
+  }, [answerLeft, state?.session.questionState, isPreparing, state?.session.isPaused, isMuted]);
 
   useEffect(() => {
     const socket = io({ path: '/socket.io', transports: ['websocket', 'polling'] });
@@ -165,15 +187,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const q = state?.question;
   const isShowing = state?.session.questionState === 'showing' && q;
   
-  const estimatedServerNow = state?.session.isPaused ? state.session.pauseStartAt : (now - timeOffset);
-  const prepareEndAt = (state?.session.questionStartAt || 0);
-  const questionEndAt = (state?.session.questionEndAt || 0);
-  
-  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - (now - timeOffset)) / 1000));
-  const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
-  const isPreparing = prepareLeft > 0;
-  const isTimeUp = answerLeft === 0;
-
   const myFinalData = finalReport?.players?.find((p: any) => p.id === myPlayer?.id);
   const myTeam = myPlayer?.team;
   const isTeamMode = state?.session.teamMode;

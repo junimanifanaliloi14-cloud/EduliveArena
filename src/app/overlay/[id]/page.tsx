@@ -1,7 +1,7 @@
 'use client';
 import { useSessionSocket } from '@/lib/useSocket';
 import { useEffect, useState, useRef, use } from 'react';
-import { initAudio, playCorrect } from '@/lib/sound';
+import { initAudio, playCorrect, playTick } from '@/lib/sound';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { QRCodeSVG } from 'qrcode.react';
@@ -17,6 +17,7 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const lastQuestionRef = useRef<string>('');
   const [emojis, setEmojis] = useState<FloatingEmoji[]>([]);
   const [activeGift, setActiveGift] = useState<{ username: string; giftName: string } | null>(null);
+  const lastTickedRef = useRef<number>(-1);
 
   useEffect(() => {
     const unlockAudio = () => initAudio();
@@ -70,11 +71,33 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
   const isPreparing = prepareLeft > 0;
 
+  // FITUR BARU: Suara Detak Waktu di OBS
+  useEffect(() => {
+    if (s.questionState === 'showing' && !isPreparing && !s.isPaused) {
+      if (answerLeft > 0 && answerLeft <= 5 && lastTickedRef.current !== answerLeft) {
+        lastTickedRef.current = answerLeft;
+        playTick();
+      }
+    }
+    if (s.questionState !== 'showing') lastTickedRef.current = -1;
+  }, [answerLeft, s.questionState, isPreparing, s.isPaused]);
+
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const playUrl = origin + '/play/' + s.pin;
 
-  // LAYAR LOBBY (Jika belum mulai)
   const isLobby = s.questionState === 'idle' && s.currentQuestionIndex < 0;
+
+  // Menentukan animasi avatar
+  let avatarAnim = {};
+  if (s.isBossBattle) {
+    avatarAnim = { scale: [1, 1.2, 1], rotate: [0, -5, 5, 0], transition: { repeat: Infinity, duration: 1 } }; // Marah/Boss
+  } else if (s.questionState === 'revealed') {
+    avatarAnim = { y: [0, -20, 0], transition: { repeat: Infinity, duration: 0.5 } }; // Lompat gembira
+  } else if (s.questionState === 'showing' && answerLeft <= 5 && !s.isPaused) {
+    avatarAnim = { x: [-2, 2, -2, 2, 0], transition: { repeat: Infinity, duration: 0.2 } }; // Gemetar panik
+  } else {
+    avatarAnim = { y: [0, -5, 0], transition: { repeat: Infinity, duration: 3, ease: "easeInOut" } }; // Mengambang santai
+  }
 
   return (
     <div className="min-h-screen p-6 bg-transparent relative overflow-hidden">
@@ -100,7 +123,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
       </div>
 
       {isLobby ? (
-        /* ================= TAMPILAN LOBBY ================= */
         <div className="max-w-6xl mx-auto grid grid-cols-3 gap-8 relative z-10 items-center min-h-[80vh] animate-pop">
           <div className="col-span-2 flex flex-col justify-center">
             <div className="text-brand-500 font-bold tracking-widest uppercase text-sm mb-2">Live Quiz Session</div>
@@ -142,14 +164,16 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
           </div>
         </div>
       ) : (
-        /* ================= TAMPILAN KUIS UTAMA ================= */
         <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
           <div className="col-span-2 card min-h-[380px] flex flex-row relative overflow-hidden">
             
             <div className="w-24 flex flex-col items-center justify-start pt-6 border-r border-white/10 pr-4 mr-4">
               <div className="relative">
                 <div className={`absolute -inset-1 rounded-full blur opacity-75 animate-pulse ${s.isBossBattle ? 'bg-gradient-to-r from-red-600 to-orange-500' : 'bg-gradient-to-r from-brand-500 to-amber-500'}`}></div>
-                <div className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">{s.isBossBattle ? '😈' : '👩‍🏫'}</div>
+                {/* AVATAR DENGAN ANIMASI */}
+                <motion.div animate={avatarAnim} className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">
+                  {s.isBossBattle ? '😈' : '👩‍🏫'}
+                </motion.div>
               </div>
               <div className="text-[10px] text-center text-slate-400 mt-3 uppercase tracking-widest font-bold">{s.isBossBattle ? 'BOSS' : 'Guru'}</div>
             </div>

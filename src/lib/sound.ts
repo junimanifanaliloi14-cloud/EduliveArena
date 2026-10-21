@@ -46,3 +46,20 @@ export function playWrong() {
   osc.start(now);
   osc.stop(now + 0.4);
 }
+
+// FITUR BARU: Suara Detak Waktu
+export function playTick() {
+  initAudio();
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(800, now); // Nada tinggi "Tik"
+  gain.gain.setValueAtTime(0.1, now);
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.1);
+}
