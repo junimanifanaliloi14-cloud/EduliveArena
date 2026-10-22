@@ -20,6 +20,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (action === 'end') {
         const report = store.getReport(id);
         io.to('session:' + id).emit('session:ended', report);
+        
+        // Kirim review personal ke setiap murid
+        const session = store.getSession(id);
+        if (session) {
+          for (const pid of session.players.keys()) {
+            const review = store.getPlayerReview(id, pid);
+            if (review) io.to('player:' + pid).emit('player:review', review);
+          }
+        }
       } else if (action === 'reveal' || action === 'pause' || action === 'resume') {
         const session = store.getSession(id);
         if (session) {

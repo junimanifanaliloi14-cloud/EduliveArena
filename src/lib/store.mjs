@@ -43,7 +43,7 @@ class Store {
   }
   deleteBank(id) { this.banks.delete(id); }
 
-  createSession({ bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal = true, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [] }) {
+  createSession({ bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal = true, ttsEnabled = false, ttsSpeed = 1, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [], aiConfig = null }) {
     const bank = this.banks.get(bankId);
     if (!bank) throw new Error('Bank tidak ditemukan');
     const session = {
@@ -54,6 +54,8 @@ class Store {
       status: 'lobby',
       timeLimitSec: timeLimitSec || 20,
       autoReveal: autoReveal,
+      ttsEnabled: ttsEnabled,
+      ttsSpeed: ttsSpeed,
       groupMode: groupMode,
       groupCount: groupCount,
       groupNames: groupNames,
@@ -63,6 +65,7 @@ class Store {
       tournamentMode: tournamentMode,
       expectedPlayers: expectedPlayers,
       invitationCodes: invitationCodes,
+      aiConfig: aiConfig, // { provider, apiKey } untuk review
       currentQuestionIndex: -1, questionState: 'idle',
       currentQ: null, 
       questionStartAt: null, questionEndAt: null,
@@ -213,6 +216,21 @@ class Store {
           p.isEliminated = true;
         }
       }
+      
+      // FITUR BARU: Simpan history untuk review
+      if (!p.history) p.history = [];
+      const finalAns = s.currentAnswers.get(pid);
+      p.history.push({
+        questionIndex: s.currentQuestionIndex,
+        questionText: s.currentQ.text,
+        options: s.currentQ.options,
+        correctIndex: s.currentQ.correctIndex,
+        playerChoice: finalAns.choice,
+        correct: finalAns.correct || false,
+        points: finalAns.points || 0,
+        imageUrl: s.currentQ.imageUrl || null
+      });
+      
       p.activeDouble = false;
     }
 
@@ -271,7 +289,8 @@ class Store {
       powerups: { fifty: 1, double: 1 },
       activeDouble: false,
       isEliminated: false,
-      isReady: false
+      isReady: false,
+      history: []
     };
     s.players.set(player.id, player);
     return player;
@@ -403,11 +422,13 @@ class Store {
         id: s.id, pin: s.pin, hostName: s.hostName, hostAvatar: s.hostAvatar, hostLogo: s.hostLogo, status: s.status,
         questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex,
         totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal,
+        ttsEnabled: s.ttsEnabled, ttsSpeed: s.ttsSpeed,
         groupMode: s.groupMode, groupCount: s.groupCount, groupNames: s.groupNames, groupScores: s.groupMode ? groupScores : null,
         eliminationMode: s.eliminationMode,
         tournamentMode: s.tournamentMode, expectedPlayers: s.expectedPlayers,
         isPaused: s.isPaused, pauseStartAt: s.pauseStartAt,
         isBossBattle: isBossBattle,
+        hasAiReview: !!s.aiConfig,
         questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now(),
       },
       question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: q.timeLimitSec, correctIndex: revealCorrect, imageUrl: q.imageUrl } : null,
@@ -422,6 +443,19 @@ class Store {
     return {
       player: { id: p.id, name: p.name, score: p.score, streak: p.streak, group: p.group, powerups: p.powerups, activeDouble: p.activeDouble, isEliminated: p.isEliminated, isReady: p.isReady },
       myAnswer: s.currentAnswers.get(playerId) || null,
+    };
+  }
+  getPlayerReview(sessionId, playerId) {
+    const s = this.sessions.get(sessionId);
+    if (!s) return null;
+    const p = s.players.get(playerId);
+    if (!p) return null;
+    return {
+      history: p.history || [],
+      aiConfig: s.aiConfig, // Dikirim ke client untuk AI explanation
+      bankName: this.banks.get(s.bankId)?.name,
+      hostName: s.hostName,
+      hostAvatar: s.hostAvatar
     };
   }
   getReport(sessionId) {

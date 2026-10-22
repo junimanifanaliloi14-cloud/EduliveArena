@@ -17,7 +17,6 @@ export default function HostHome() {
   const [selected, setSelected] = useState('');
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   
-  // State Pengaturan
   const [hostName, setHostName] = useState('Bu Guru');
   const [hostAvatar, setHostAvatar] = useState('👩‍🏫');
   const [hostLogo, setHostLogo] = useState('');
@@ -29,20 +28,19 @@ export default function HostHome() {
   const [eliminationMode, setEliminationMode] = useState(false);
   const [shuffleOptions, setShuffleOptions] = useState(false);
   const [bossQuestions, setBossQuestions] = useState<number[]>([]);
+  const [aiReviewEnabled, setAiReviewEnabled] = useState(false);
 
-  // State Turnamen
   const [tournamentMode, setTournamentMode] = useState(false);
   const [namesInput, setNamesInput] = useState('');
   const [generatedCodes, setGeneratedCodes] = useState<{name: string, code: string}[]>([]);
 
-  // State AI Generator (Diperbarui)
   const [showAi, setShowAi] = useState(false);
   const [aiProvider, setAiProvider] = useState<'gemini' | 'groq' | 'openrouter'>('gemini');
   const [aiApiKey, setAiApiKey] = useState('');
   const [aiMaterial, setAiMaterial] = useState('');
   const [aiTopic, setAiTopic] = useState('');
   const [aiMode, setAiMode] = useState<'material' | 'topic'>('material');
-  const [aiNumQuestions, setAiNumQuestions] = useState(10); // Bisa sampai 50
+  const [aiNumQuestions, setAiNumQuestions] = useState(10);
   const [aiDifficulty, setAiDifficulty] = useState('Sedang');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiProgress, setAiProgress] = useState(0);
@@ -72,20 +70,18 @@ export default function HostHome() {
         if (parsed.eliminationMode !== undefined) setEliminationMode(parsed.eliminationMode);
         if (parsed.shuffleOptions !== undefined) setShuffleOptions(parsed.shuffleOptions);
         if (parsed.tournamentMode !== undefined) setTournamentMode(parsed.tournamentMode);
+        if (parsed.aiReviewEnabled !== undefined) setAiReviewEnabled(parsed.aiReviewEnabled);
       } catch (e) { console.error(e); }
     }
-    // Muat API Key berdasarkan provider
     const savedAiKey = localStorage.getItem(`edulive_ai_key_${aiProvider}`);
     if (savedAiKey) setAiApiKey(savedAiKey);
-    else setAiApiKey('');
-
     fetchBanks();
   }, [aiProvider]);
 
   useEffect(() => {
-    const settings = { hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode };
+    const settings = { hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode, aiReviewEnabled };
     localStorage.setItem('edulive_teacher_settings', JSON.stringify(settings));
-  }, [hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode]);
+  }, [hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode, aiReviewEnabled]);
 
   useEffect(() => {
     if (aiApiKey) localStorage.setItem(`edulive_ai_key_${aiProvider}`, aiApiKey);
@@ -100,53 +96,9 @@ export default function HostHome() {
     });
   }
 
-  // ================= LOGIKA AI MULTI-PROVIDER & BATCHING =================
-  async function callAI(prompt: string): Promise<string> {
-    if (aiProvider === 'gemini') {
-      // Model Gemini terbaru yang gratis: gemini-3.5-flash-lite
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${aiApiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } })
-      });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || 'Gagal memanggil Gemini.'); }
-      const data = await res.json();
-      return data.candidates[0].content.parts[0].text;
-    } 
-    else if (aiProvider === 'groq') {
-      // Groq (Llama 4 Scout) - Gratis 1000 req/hari
-      const url = `https://api.groq.com/openai/v1/chat/completions`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiApiKey}` },
-        body: JSON.stringify({
-          model: "meta-llama/llama-4-scout-17b-16e-instruct",
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: "json_object" },
-          temperature: 0.7
-        })
-      });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || 'Gagal memanggil Groq.'); }
-      const data = await res.json();
-      return data.choices[0].message.content;
-    } 
-    else {
-      // OpenRouter (Gunakan model gratis seperti Gemma 4)
-      const url = `https://openrouter.ai/api/v1/chat/completions`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiApiKey}` },
-        body: JSON.stringify({
-          model: "google/gemma-4-31b-it:free",
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7
-        })
-      });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error?.message || 'Gagal memanggil OpenRouter.'); }
-      const data = await res.json();
-      return data.choices[0].message.content;
-    }
+  async function callAIGenerate(prompt: string): Promise<string> {
+    const { callAI } = await import('@/lib/aiHelper');
+    return callAI(prompt, { provider: aiProvider, apiKey: aiApiKey });
   }
 
   async function generateWithAI() {
@@ -154,12 +106,10 @@ export default function HostHome() {
     if (aiMode === 'material' && !aiMaterial.trim()) { alert('Masukkan materi pelajaran terlebih dahulu.'); return; }
     if (aiMode === 'topic' && !aiTopic.trim()) { alert('Masukkan topik pelajaran terlebih dahulu.'); return; }
     
-    setAiGenerating(true);
-    setAiGenerated([]);
-    setAiProgress(0);
+    setAiGenerating(true); setAiGenerated([]); setAiProgress(0);
 
     try {
-      const BATCH_SIZE = 10; // Maksimal 10 soal per request agar AI fokus
+      const BATCH_SIZE = 10;
       const totalBatches = Math.ceil(aiNumQuestions / BATCH_SIZE);
       let allQuestions: any[] = [];
 
@@ -174,8 +124,7 @@ export default function HostHome() {
           prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda berkualitas tentang topik: "${aiTopic}".\n\nAturan:\n- Setiap soal memiliki tepat 4 pilihan jawaban (A, B, C, D)\n- Hanya ada 1 jawaban benar per soal\n- Tingkat kesulitan: ${aiDifficulty}\n- Gunakan Bahasa Indonesia yang baik dan benar\n- Setiap soal waktu menjawab 20 detik\n- Kembalikan HANYA JSON array valid, tanpa markdown, tanpa penjelasan tambahan\nFormat JSON:\n[{"text":"...","options":["...","...","...","..."],"correctIndex":0,"timeLimitSec":20}]`;
         }
 
-        const rawText = await callAI(prompt);
-        // Bersihkan kemungkinan markdown ```json ... ```
+        const rawText = await callAIGenerate(prompt);
         const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleanJson);
 
@@ -190,15 +139,12 @@ export default function HostHome() {
           }));
           allQuestions = [...allQuestions, ...formatted];
         }
-
         setAiProgress(Math.round(((i + 1) / totalBatches) * 100));
       }
 
-      if (allQuestions.length === 0) throw new Error('AI tidak mengembalikan soal yang valid. Coba lagi.');
+      if (allQuestions.length === 0) throw new Error('AI tidak mengembalikan soal yang valid.');
       setAiGenerated(allQuestions);
-    } catch (e: any) {
-      alert('Error: ' + e.message);
-    }
+    } catch (e: any) { alert('Error: ' + e.message); }
     setAiGenerating(false);
   }
 
@@ -206,21 +152,9 @@ export default function HostHome() {
     if (aiGenerated.length === 0) return;
     setLoading(true);
     const bankName = aiMode === 'material' ? ('AI: ' + aiMaterial.slice(0, 40)) : ('AI: ' + aiTopic);
-    const res = await fetch('/api/banks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: bankName, subject: 'Umum', questions: aiGenerated }),
-    });
-    if (res.ok) {
-      setShowAi(false);
-      setAiGenerated([]);
-      setAiMaterial('');
-      setAiTopic('');
-      fetchBanks();
-      alert('Bank soal AI berhasil disimpan!');
-    } else {
-      alert('Gagal menyimpan bank soal AI.');
-    }
+    const res = await fetch('/api/banks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: bankName, subject: 'Umum', questions: aiGenerated }) });
+    if (res.ok) { setShowAi(false); setAiGenerated([]); setAiMaterial(''); setAiTopic(''); fetchBanks(); alert('Bank soal AI berhasil disimpan!'); }
+    else alert('Gagal menyimpan bank soal AI.');
     setLoading(false);
   }
 
@@ -240,14 +174,21 @@ export default function HostHome() {
       alert('Silakan klik "Generate Kode Undangan" terlebih dahulu.');
       return;
     }
+    if (aiReviewEnabled && !aiApiKey.trim()) {
+      alert('Aktifkan AI Review membutuhkan API Key. Silakan isi di bagian "Buat Soal AI" atau matikan fitur AI Review.');
+      return;
+    }
 
     setLoading(true);
+    const aiConfig = aiReviewEnabled ? { provider: aiProvider, apiKey: aiApiKey } : null;
+    
     const res = await fetch('/api/sessions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         bankId: selected, hostName, hostAvatar, hostLogo, timeLimitSec: timeLimit, autoReveal, 
         groupMode, groupCount, groupNames, eliminationMode, bossQuestions, shuffleOptions,
-        tournamentMode, expectedPlayers: generatedCodes.length, invitationCodes: generatedCodes 
+        tournamentMode, expectedPlayers: generatedCodes.length, invitationCodes: generatedCodes,
+        aiConfig
       }),
     });
     const data = await res.json();
@@ -326,10 +267,7 @@ export default function HostHome() {
   async function saveImportedBank() {
     if (parsedQuestions.length === 0 || !newBankName.trim()) return;
     setLoading(true);
-    const res = await fetch('/api/banks', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newBankName, subject: 'Umum', questions: parsedQuestions }),
-    });
+    const res = await fetch('/api/banks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newBankName, subject: 'Umum', questions: parsedQuestions }) });
     if (res.ok) {
       setIsImporting(false); setParsedQuestions([]); setNewBankName('');
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -363,7 +301,6 @@ export default function HostHome() {
       <h1 className="text-3xl font-bold">Dashboard Guru</h1>
       <p className="text-slate-400 mt-1">Pilih bank soal dan atur durasi kuis live.</p>
 
-      {/* SECTION: AI GENERATOR MULTI-PROVIDER */}
       {showAi && (
         <div className="card mt-6 border-purple-500/50 bg-purple-500/5 animate-slide-up">
           <h2 className="font-semibold text-lg mb-2 text-purple-400">🤖 Buat Soal Otomatis dengan AI</h2>
@@ -375,53 +312,39 @@ export default function HostHome() {
           </p>
 
           <div className="space-y-4">
-            {/* Pilih Provider */}
             <div className="flex gap-2">
               {(['gemini', 'groq', 'openrouter'] as const).map(p => (
-                <button key={p} onClick={() => setAiProvider(p)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-semibold capitalize transition ${aiProvider === p ? 'bg-purple-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
-                  {p}
-                </button>
+                <button key={p} onClick={() => setAiProvider(p)} className={`flex-1 py-2 rounded-xl text-sm font-semibold capitalize transition ${aiProvider === p ? 'bg-purple-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>{p}</button>
               ))}
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1">API Key {aiProvider.toUpperCase()} (Tersimpan di browser)</label>
-              <input type="password" value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} placeholder="Masukkan API Key..." 
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm font-mono" />
+              <label className="block text-xs text-slate-400 mb-1">API Key {aiProvider.toUpperCase()}</label>
+              <input type="password" value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} placeholder="Masukkan API Key..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm font-mono" />
             </div>
             
-            {/* Mode Generate */}
             <div className="flex gap-2">
               <button onClick={() => setAiMode('material')} className={`flex-1 py-2 rounded-lg text-sm ${aiMode === 'material' ? 'bg-purple-500/30 border border-purple-500 text-white' : 'bg-white/5 text-slate-400'}`}>Dari Materi Teks</button>
               <button onClick={() => setAiMode('topic')} className={`flex-1 py-2 rounded-lg text-sm ${aiMode === 'topic' ? 'bg-purple-500/30 border border-purple-500 text-white' : 'bg-white/5 text-slate-400'}`}>Dari Topik</button>
             </div>
 
             {aiMode === 'material' ? (
-              <textarea value={aiMaterial} onChange={e => setAiMaterial(e.target.value)} placeholder="Tempelkan materi pelajaran di sini..." 
-                className="w-full h-32 rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm" />
+              <textarea value={aiMaterial} onChange={e => setAiMaterial(e.target.value)} placeholder="Tempelkan materi pelajaran di sini..." className="w-full h-32 rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm" />
             ) : (
-              <input value={aiTopic} onChange={e => setAiTopic(e.target.value)} placeholder="Contoh: Fotosintesis, Hukum Newton, Sejarah Kemerdekaan..." 
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm" />
+              <input value={aiTopic} onChange={e => setAiTopic(e.target.value)} placeholder="Contoh: Fotosintesis, Hukum Newton..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm" />
             )}
 
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Jumlah Soal</label>
                 <select value={aiNumQuestions} onChange={e => setAiNumQuestions(Number(e.target.value))} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm">
-                  <option value={5} className="bg-slate-800">5 Soal</option>
-                  <option value={10} className="bg-slate-800">10 Soal</option>
-                  <option value={20} className="bg-slate-800">20 Soal</option>
-                  <option value={30} className="bg-slate-800">30 Soal</option>
-                  <option value={50} className="bg-slate-800">50 Soal</option>
+                  <option value={5} className="bg-slate-800">5 Soal</option><option value={10} className="bg-slate-800">10 Soal</option><option value={20} className="bg-slate-800">20 Soal</option><option value={30} className="bg-slate-800">30 Soal</option><option value={50} className="bg-slate-800">50 Soal</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Tingkat Kesulitan</label>
                 <select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm">
-                  <option value="Mudah" className="bg-slate-800">Mudah (SD)</option>
-                  <option value="Sedang" className="bg-slate-800">Sedang (SMP)</option>
-                  <option value="Sulit" className="bg-slate-800">Sulit (SMA)</option>
+                  <option value="Mudah" className="bg-slate-800">Mudah (SD)</option><option value="Sedang" className="bg-slate-800">Sedang (SMP)</option><option value="Sulit" className="bg-slate-800">Sulit (SMA)</option>
                 </select>
               </div>
             </div>
@@ -439,24 +362,19 @@ export default function HostHome() {
                       <div className="font-medium mb-1">{i + 1}. {q.text}</div>
                       <div className="grid grid-cols-2 gap-1 text-xs">
                         {q.options.map((o: string, idx: number) => (
-                          <div key={idx} className={idx === q.correctIndex ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
-                            {String.fromCharCode(65 + idx)}. {o}
-                          </div>
+                          <div key={idx} className={idx === q.correctIndex ? 'text-emerald-400 font-bold' : 'text-slate-400'}>{String.fromCharCode(65 + idx)}. {o}</div>
                         ))}
                       </div>
                     </div>
                   ))}
                 </div>
-                <button onClick={saveAIGenerated} disabled={loading} className="btn-primary w-full bg-emerald-600 hover:bg-emerald-700">
-                  {loading ? 'Menyimpan...' : `💾 Simpan ${aiGenerated.length} Soal ke Bank`}
-                </button>
+                <button onClick={saveAIGenerated} disabled={loading} className="btn-primary w-full bg-emerald-600 hover:bg-emerald-700">{loading ? 'Menyimpan...' : `💾 Simpan ${aiGenerated.length} Soal ke Bank`}</button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Bagian Import & Pengaturan Lainnya (Sama seperti sebelumnya) */}
       {isImporting && (
         <div className="card mt-6 border-brand-500/50 bg-brand-500/5 animate-slide-up">
           <div className="flex justify-between items-start mb-2">
@@ -491,9 +409,7 @@ export default function HostHome() {
             <label className="block text-sm text-slate-400 mb-2">Pilih Avatar Guru</label>
             <div className="flex flex-wrap gap-2">
               {AVATAR_OPTIONS.map(emoji => (
-                <button key={emoji} onClick={() => setHostAvatar(emoji)} className={`text-3xl p-2 rounded-xl transition-all ${hostAvatar === emoji ? 'bg-brand-500/30 border-2 border-brand-500 scale-110' : 'bg-white/5 border border-white/10 hover:bg-white/10'}`}>
-                  {emoji}
-                </button>
+                <button key={emoji} onClick={() => setHostAvatar(emoji)} className={`text-3xl p-2 rounded-xl transition-all ${hostAvatar === emoji ? 'bg-brand-500/30 border-2 border-brand-500 scale-110' : 'bg-white/5 border border-white/10 hover:bg-white/10'}`}>{emoji}</button>
               ))}
             </div>
           </div>
@@ -520,6 +436,28 @@ export default function HostHome() {
               <div><div className="font-medium text-sm text-rose-300">Mode Eliminasi</div></div>
             </label>
           </div>
+        </div>
+
+        {/* FITUR BARU: AI REVIEW */}
+        <div className="border-t border-white/10 pt-4">
+          <label className="flex items-center gap-3 cursor-pointer mb-2">
+            <input type="checkbox" checked={aiReviewEnabled} onChange={e => setAiReviewEnabled(e.target.checked)} className="h-5 w-5 rounded bg-purple-500/20 border-purple-500/50 text-purple-500 focus:ring-purple-500 cursor-pointer" />
+            <div>
+              <div className="font-bold text-purple-400">📖 Review Mode + AI Explanation</div>
+              <div className="text-xs text-slate-400 mt-0.5">Siswa bisa melihat penjelasan AI untuk setiap soal yang salah. (Menggunakan API Key dari fitur "Buat Soal AI")</div>
+            </div>
+          </label>
+          
+          {aiReviewEnabled && (
+            <div className="bg-purple-950/30 p-3 rounded-xl border border-purple-500/20 mt-3 animate-slide-up">
+              <div className="text-xs text-slate-300">
+                <b>Provider aktif:</b> {aiProvider.toUpperCase()} {aiApiKey ? `(✓ Key terisi)` : `(⚠️ Key belum diisi)`}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-1">
+                ⚠️ Siswa akan menggunakan API Key Anda. Pastikan kuota mencukupi.
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="border-t border-white/10 pt-4">
