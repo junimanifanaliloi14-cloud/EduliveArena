@@ -22,20 +22,28 @@ class Store {
     this.sessions = new Map();
     this.sessionsByPin = new Map();
     this.timers = new Map();
-    this.autoPlayTimers = new Map();
     this.banks.set(SEED_BANK.id, SEED_BANK);
   }
 
   listBanks() {
+    // Kirim soal LENGKAP agar bisa diedit di dashboard
     return Array.from(this.banks.values()).map(b => ({
       id: b.id, name: b.name, subject: b.subject, questionCount: b.questions.length, createdAt: b.createdAt,
-      questions: b.questions.map(q => ({ id: q.id, text: q.text })) 
+      questions: b.questions 
     }));
   }
   getBank(id) { return this.banks.get(id); }
   createBank({ name, subject, questions = [] }) {
     const bank = { id: 'bank_' + nid(), name: name || 'Bank Baru', subject: subject || 'Umum', questions, createdAt: Date.now() };
     this.banks.set(bank.id, bank);
+    return bank;
+  }
+  updateBank(id, { name, subject, questions }) {
+    const bank = this.banks.get(id);
+    if (!bank) throw new Error('Bank tidak ditemukan');
+    if (name !== undefined) bank.name = name;
+    if (subject !== undefined) bank.subject = subject;
+    if (questions !== undefined) bank.questions = questions;
     return bank;
   }
   deleteBank(id) { this.banks.delete(id); }
@@ -84,22 +92,17 @@ class Store {
     }
     return s;
   }
-
   stopAutoPlay(id) {
     const s = this.sessions.get(id);
     if (s) s.isAutoPlaying = false;
     return s;
   }
-
   _autoPlayTick(id) {
     const s = this.sessions.get(id);
     if (!s || !s.isAutoPlaying) return;
     if (s.isPaused) { setTimeout(() => this._autoPlayTick(id), 500); return; }
     if (s.status === 'ended') { s.isAutoPlaying = false; return; }
-
     const bank = this.banks.get(s.bankId);
-
-    // Semua soal selesai
     if (s.currentQuestionIndex + 1 >= bank.questions.length && s.questionState === 'revealed') {
       setTimeout(() => {
         const s2 = this.sessions.get(id);
@@ -110,8 +113,6 @@ class Store {
       }, s.autoPlayDelaySec * 1000);
       return;
     }
-
-    // Belum mulai atau sudah selesai, siap ke soal berikutnya
     if (s.questionState === 'idle' || s.questionState === 'revealed') {
       const waitTime = s.questionState === 'revealed' ? s.autoPlayDelaySec * 1000 : 1500;
       setTimeout(() => {
@@ -124,8 +125,6 @@ class Store {
       }, waitTime);
       return;
     }
-
-    // Sedang menampilkan soal, tunggu timer habis
     if (s.questionState === 'showing') {
       const waitMs = Math.max(0, s.questionEndAt - Date.now() + 500);
       setTimeout(() => {
@@ -141,7 +140,6 @@ class Store {
       return;
     }
   }
-
   _emitState(id) {
     if (globalThis.__IO__) {
       const s = this.sessions.get(id);
@@ -158,16 +156,13 @@ class Store {
     if (!s) throw new Error('Sesi tidak ditemukan');
     const bank = this.banks.get(s.bankId);
     if (s.currentQuestionIndex + 1 >= bank.questions.length) return { ...s, done: true };
-    
     this._clearTimer(id);
     s.currentQuestionIndex++;
     s.questionState = 'showing';
     s.isPaused = false;
     s.pauseStartAt = null;
-    
     const rawQ = bank.questions[s.currentQuestionIndex];
     const timeLimit = rawQ.timeLimitSec || s.timeLimitSec || 20;
-    
     if (s.shuffleOptions) {
       const optionsWithIndex = rawQ.options.map((opt, idx) => ({ opt, isCorrect: idx === rawQ.correctIndex }));
       optionsWithIndex.sort(() => Math.random() - 0.5);
@@ -175,11 +170,9 @@ class Store {
     } else {
       s.currentQ = { ...rawQ, timeLimitSec: timeLimit };
     }
-
-    s.questionStartAt = Date.now() + 3000; 
+    s.questionStartAt = Date.now() + 3000;
     s.questionEndAt = s.questionStartAt + (timeLimit * 1000);
     s.currentAnswers.clear();
-
     if (s.autoReveal) {
       const delay = (s.questionEndAt - Date.now()) + 500;
       const timer = setTimeout(() => this._autoReveal(id), delay);
@@ -187,7 +180,6 @@ class Store {
     }
     return s;
   }
-  
   _autoReveal(id) {
     const s = this.sessions.get(id);
     if (!s || s.questionState !== 'showing' || s.isPaused) return;
@@ -199,104 +191,70 @@ class Store {
       }
     }
   }
-
-  _clearTimer(id) {
-    if (this.timers.has(id)) { clearTimeout(this.timers.get(id)); this.timers.delete(id); }
-  }
-
+  _clearTimer(id) { if (this.timers.has(id)) { clearTimeout(this.timers.get(id)); this.timers.delete(id); } }
   pauseTimer(id) {
     const s = this.sessions.get(id);
     if (!s || s.questionState !== 'showing' || s.isPaused) return s;
-    s.isPaused = true;
-    s.pauseStartAt = Date.now();
-    this._clearTimer(id);
-    return s;
+    s.isPaused = true; s.pauseStartAt = Date.now(); this._clearTimer(id); return s;
   }
-
   resumeTimer(id) {
     const s = this.sessions.get(id);
     if (!s || !s.isPaused) return s;
     const pauseDuration = Date.now() - s.pauseStartAt;
     s.questionStartAt += pauseDuration;
     s.questionEndAt += pauseDuration;
-    s.isPaused = false;
-    s.pauseStartAt = null;
-
+    s.isPaused = false; s.pauseStartAt = null;
     if (s.autoReveal) {
       const delay = (s.questionEndAt - Date.now()) + 500;
       if (delay > 0) { const timer = setTimeout(() => this._autoReveal(id), delay); this.timers.set(id, timer); }
     }
     return s;
   }
-
   revealAnswer(id) {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Sesi tidak ditemukan');
     this._clearTimer(id);
     if (s.questionState === 'revealed') return s;
-    s.questionState = 'revealed';
-    s.isPaused = false;
-    
+    s.questionState = 'revealed'; s.isPaused = false;
     let correctCount = 0;
     const totalPlayers = s.players.size;
-
     for (const [pid, p] of s.players) {
       const ans = s.currentAnswers.get(pid);
       if (ans) {
-        p.score += ans.points;
-        p.streak = ans.newStreak;
+        p.score += ans.points; p.streak = ans.newStreak;
         p.maxStreak = Math.max(p.maxStreak || 0, p.streak);
         p.totalAnswers++;
         if (ans.correct) { p.correctCount++; correctCount++; }
         else if (s.eliminationMode && !p.isEliminated) { p.isEliminated = true; }
       } else {
         s.currentAnswers.set(pid, { playerId: pid, choice: null, correct: false, points: 0, noAnswer: true });
-        p.streak = 0;
-        p.totalAnswers++;
+        p.streak = 0; p.totalAnswers++;
         if (s.eliminationMode && !p.isEliminated) { p.isEliminated = true; }
       }
-      
       if (!p.history) p.history = [];
       const finalAns = s.currentAnswers.get(pid);
-      p.history.push({
-        questionIndex: s.currentQuestionIndex,
-        questionText: s.currentQ.text,
-        options: s.currentQ.options,
-        correctIndex: s.currentQ.correctIndex,
-        playerChoice: finalAns.choice,
-        correct: finalAns.correct || false,
-        points: finalAns.points || 0,
-        imageUrl: s.currentQ.imageUrl || null
-      });
+      p.history.push({ questionIndex: s.currentQuestionIndex, questionText: s.currentQ.text, options: s.currentQ.options, correctIndex: s.currentQ.correctIndex, playerChoice: finalAns.choice, correct: finalAns.correct || false, points: finalAns.points || 0, imageUrl: s.currentQ.imageUrl || null });
       p.activeDouble = false;
     }
-
     const wrongCount = totalPlayers - correctCount;
     s.questionStats[s.currentQuestionIndex] = { index: s.currentQuestionIndex, text: s.currentQ.text, total: totalPlayers, correct: correctCount, wrong: wrongCount, accuracy: totalPlayers > 0 ? Math.round((correctCount / totalPlayers) * 100) : 0 };
     return s;
   }
-
   endSession(id) {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Sesi tidak ditemukan');
-    this._clearTimer(id);
-    s.isAutoPlaying = false;
-    s.status = 'ended';
-    s.endedAt = Date.now();
+    this._clearTimer(id); s.isAutoPlaying = false; s.status = 'ended'; s.endedAt = Date.now();
     return s;
   }
-
   joinSession(sessionId, name, code) {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Sesi tidak ditemukan');
     if (s.status === 'ended') throw new Error('Sesi telah berakhir');
-    
     if (s.tournamentMode) {
       const invite = s.invitationCodes.find(p => p.name.toLowerCase() === name.trim().toLowerCase() && p.code === code);
       if (!invite) throw new Error('Nama atau Kode Undangan tidak valid!');
       if (Array.from(s.players.values()).some(p => p.name.toLowerCase() === name.trim().toLowerCase())) throw new Error('Nama ini sudah digunakan!');
     }
-
     let group = null;
     if (s.groupMode) {
       const counts = {};
@@ -306,7 +264,6 @@ class Store {
       Object.keys(counts).forEach(g => { if (counts[g] < minCount) { minCount = counts[g]; minGroup = g; } });
       group = minGroup;
     }
-
     const player = { id: 'p_' + nid(), name: (name || 'Anonim').trim().slice(0, 24) || 'Anonim', score: 0, streak: 0, maxStreak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(), online: true, group, powerups: { fifty: 1, double: 1 }, activeDouble: false, isEliminated: false, isReady: false, history: [] };
     s.players.set(player.id, player);
     return player;
@@ -323,8 +280,7 @@ class Store {
   kickPlayer(sessionId, playerId) {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Sesi tidak ditemukan');
-    s.players.delete(playerId);
-    s.currentAnswers.delete(playerId);
+    s.players.delete(playerId); s.currentAnswers.delete(playerId);
     return s;
   }
   usePowerup(sessionId, playerId, type) {
@@ -338,11 +294,10 @@ class Store {
       const wrongIndices = [0,1,2,3].filter(i => i !== s.currentQ.correctIndex);
       wrongIndices.sort(() => Math.random() - 0.5);
       return { ok: true, hidden: wrongIndices.slice(0, 2) };
-    } 
+    }
     if (type === 'double') {
       if (p.powerups.double <= 0) throw new Error('Kuota Poin Ganda habis');
-      p.powerups.double--;
-      p.activeDouble = true;
+      p.powerups.double--; p.activeDouble = true;
       return { ok: true };
     }
     throw new Error('Tipe power-up tidak valid');
@@ -358,7 +313,6 @@ class Store {
     if (!p) throw new Error('Pemain tidak ditemukan');
     if (p.isEliminated) throw new Error('Anda sudah tereliminasi');
     if (s.currentAnswers.has(playerId)) throw new Error('Sudah menjawab');
-
     const correct = Number(choice) === s.currentQ.correctIndex;
     const timeUsed = Date.now() - s.questionStartAt;
     const timeLimit = s.questionEndAt - s.questionStartAt;
@@ -367,7 +321,6 @@ class Store {
     const isBossBattle = s.bossQuestions.includes(s.currentQuestionIndex);
     if (correct && isBossBattle) finalPoints = finalPoints * 3;
     if (p.activeDouble) finalPoints = finalPoints * 2;
-
     s.currentAnswers.set(playerId, { playerId, choice, submittedAt: Date.now(), correct, points: finalPoints, newStreak: result.newStreak });
     return { correct, points: finalPoints, newStreak: result.newStreak, totalScore: p.score };
   }
@@ -377,7 +330,6 @@ class Store {
     const streakBonus = Math.min(500, streak * 100);
     return { points: 1000 + speedBonus + streakBonus, newStreak: streak + 1 };
   }
-
   getPublicState(sessionId) {
     const s = this.sessions.get(sessionId);
     if (!s) return null;
@@ -401,18 +353,7 @@ class Store {
       for (const p of s.players.values()) { if (p.group && groupScores[p.group] !== undefined) groupScores[p.group] += p.score; }
     }
     return {
-      session: {
-        id: s.id, pin: s.pin, hostName: s.hostName, hostAvatar: s.hostAvatar, hostLogo: s.hostLogo, status: s.status,
-        questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex,
-        totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal,
-        ttsEnabled: s.ttsEnabled, ttsSpeed: s.ttsSpeed,
-        autoPlay: s.autoPlay, isAutoPlaying: s.isAutoPlaying, autoPlayDelaySec: s.autoPlayDelaySec,
-        groupMode: s.groupMode, groupCount: s.groupCount, groupNames: s.groupNames, groupScores: s.groupMode ? groupScores : null,
-        eliminationMode: s.eliminationMode, tournamentMode: s.tournamentMode, expectedPlayers: s.expectedPlayers,
-        isPaused: s.isPaused, pauseStartAt: s.pauseStartAt, isBossBattle,
-        hasAiReview: !!s.aiConfig,
-        questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now(),
-      },
+      session: { id: s.id, pin: s.pin, hostName: s.hostName, hostAvatar: s.hostAvatar, hostLogo: s.hostLogo, status: s.status, questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex, totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal, ttsEnabled: s.ttsEnabled, ttsSpeed: s.ttsSpeed, autoPlay: s.autoPlay, isAutoPlaying: s.isAutoPlaying, autoPlayDelaySec: s.autoPlayDelaySec, groupMode: s.groupMode, groupCount: s.groupCount, groupNames: s.groupNames, groupScores: s.groupMode ? groupScores : null, eliminationMode: s.eliminationMode, tournamentMode: s.tournamentMode, expectedPlayers: s.expectedPlayers, isPaused: s.isPaused, pauseStartAt: s.pauseStartAt, isBossBattle, hasAiReview: !!s.aiConfig, questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now() },
       question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: q.timeLimitSec, correctIndex: revealCorrect, imageUrl: q.imageUrl } : null,
       leaderboard, allPlayers, answerStats, playerCount: s.players.size,
     };

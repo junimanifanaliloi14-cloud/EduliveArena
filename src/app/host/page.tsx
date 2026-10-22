@@ -5,7 +5,10 @@ import Link from 'next/link';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
-interface Bank { id: string; name: string; subject: string; questionCount: number; questions?: { id: string; text: string }[]; }
+interface Bank { 
+  id: string; name: string; subject: string; questionCount: number;
+  questions?: any[];
+}
 const AVATAR_OPTIONS = ['👩‍🏫', '👨‍🏫', '🦸‍♀️', '🦸‍♂️', '🧙‍♂️', '🧙‍♀️', '🐯', '🦊', '🤖', '👽'];
 
 export default function HostHome() {
@@ -47,6 +50,10 @@ export default function HostHome() {
   const [parsedQuestions, setParsedQuestions] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Editor State
+  const [editingBank, setEditingBank] = useState<Bank | null>(null);
+  const [savingBank, setSavingBank] = useState(false);
+
   useEffect(() => {
     const saved = localStorage.getItem('edulive_teacher_settings');
     if (saved) {
@@ -87,6 +94,77 @@ export default function HostHome() {
     });
   }
 
+  // =============== EDITOR FUNCTIONS ===============
+  function openEditor(bank: Bank) {
+    setEditingBank(JSON.parse(JSON.stringify(bank)));
+  }
+  function closeEditor() {
+    if (!confirm('Batalkan perubahan? Data yang belum disimpan akan hilang.')) return;
+    setEditingBank(null);
+  }
+  function updateBankMeta(field: 'name' | 'subject', value: string) {
+    setEditingBank(prev => prev ? { ...prev, [field]: value } : prev);
+  }
+  function updateQuestionField(qIdx: number, field: string, value: any) {
+    setEditingBank(prev => {
+      if (!prev || !prev.questions) return prev;
+      const newQs = [...prev.questions];
+      newQs[qIdx] = { ...newQs[qIdx], [field]: value };
+      return { ...prev, questions: newQs };
+    });
+  }
+  function updateOptionField(qIdx: number, optIdx: number, value: string) {
+    setEditingBank(prev => {
+      if (!prev || !prev.questions) return prev;
+      const newQs = [...prev.questions];
+      const newOpts = [...newQs[qIdx].options];
+      newOpts[optIdx] = value;
+      newQs[qIdx] = { ...newQs[qIdx], options: newOpts };
+      return { ...prev, questions: newQs };
+    });
+  }
+  function addQuestionToEditor() {
+    setEditingBank(prev => {
+      if (!prev) return prev;
+      const newQ = {
+        id: 'q_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+        text: '', options: ['', '', '', ''], correctIndex: 0, timeLimitSec: 20, imageUrl: null
+      };
+      return { ...prev, questions: [...(prev.questions || []), newQ] };
+    });
+  }
+  function deleteQuestionFromEditor(qIdx: number) {
+    if (!confirm(`Hapus soal nomor ${qIdx + 1}?`)) return;
+    setEditingBank(prev => {
+      if (!prev) return prev;
+      return { ...prev, questions: prev.questions?.filter((_, i) => i !== qIdx) || [] };
+    });
+  }
+  async function saveEditedBank() {
+    if (!editingBank) return;
+    if (!editingBank.name.trim()) { alert('Nama bank soal tidak boleh kosong.'); return; }
+    if (!editingBank.questions || editingBank.questions.length === 0) { alert('Minimal harus ada 1 soal.'); return; }
+    for (let i = 0; i < editingBank.questions.length; i++) {
+      const q = editingBank.questions[i];
+      if (!q.text.trim()) { alert(`Soal nomor ${i + 1} masih kosong.`); return; }
+      if (q.options.some((o: string) => !o.trim())) { alert(`Ada opsi yang kosong di soal nomor ${i + 1}.`); return; }
+    }
+    setSavingBank(true);
+    const res = await fetch('/api/banks/' + editingBank.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editingBank.name, subject: editingBank.subject, questions: editingBank.questions }),
+    });
+    if (res.ok) {
+      setEditingBank(null);
+      fetchBanks();
+      alert('✅ Bank soal berhasil diperbarui!');
+    } else {
+      alert('❌ Gagal menyimpan perubahan.');
+    }
+    setSavingBank(false);
+  }
+  // =============== END EDITOR FUNCTIONS ===============
+
   async function callAIGenerate(prompt: string): Promise<string> {
     const { callAI } = await import('@/lib/aiHelper');
     return callAI(prompt, { provider: aiProvider, apiKey: aiApiKey });
@@ -94,8 +172,8 @@ export default function HostHome() {
 
   async function generateWithAI() {
     if (!aiApiKey.trim()) { alert(`Masukkan API Key ${aiProvider} terlebih dahulu.`); return; }
-    if (aiMode === 'material' && !aiMaterial.trim()) { alert('Masukkan materi pelajaran terlebih dahulu.'); return; }
-    if (aiMode === 'topic' && !aiTopic.trim()) { alert('Masukkan topik pelajaran terlebih dahulu.'); return; }
+    if (aiMode === 'material' && !aiMaterial.trim()) { alert('Masukkan materi pelajaran.'); return; }
+    if (aiMode === 'topic' && !aiTopic.trim()) { alert('Masukkan topik pelajaran.'); return; }
     setAiGenerating(true); setAiGenerated([]); setAiProgress(0);
     try {
       const BATCH_SIZE = 10;
@@ -106,25 +184,20 @@ export default function HostHome() {
         const batchCount = Math.min(BATCH_SIZE, remaining);
         let prompt = '';
         if (aiMode === 'material') {
-          prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda berkualitas tentang materi berikut:\n\n"${aiMaterial}"\n\nAturan:\n- Setiap soal memiliki tepat 4 pilihan jawaban (A, B, C, D)\n- Hanya ada 1 jawaban benar per soal\n- Tingkat kesulitan: ${aiDifficulty}\n- Gunakan Bahasa Indonesia yang baik dan benar\n- Setiap soal waktu menjawab 20 detik\n- Kembalikan HANYA JSON array valid, tanpa markdown\nFormat JSON:\n[{"text":"...","options":["...","...","...","..."],"correctIndex":0,"timeLimitSec":20}]`;
+          prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda berkualitas tentang materi berikut:\n\n"${aiMaterial}"\n\nAturan:\n- 4 pilihan jawaban, 1 benar\n- Kesulitan: ${aiDifficulty}\n- Bahasa Indonesia\n- Kembalikan HANYA JSON array valid\nFormat:\n[{"text":"...","options":["A","B","C","D"],"correctIndex":0,"timeLimitSec":20}]`;
         } else {
-          prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda tentang topik: "${aiTopic}".\n\nAturan:\n- Setiap soal memiliki tepat 4 pilihan jawaban\n- Hanya ada 1 jawaban benar per soal\n- Tingkat kesulitan: ${aiDifficulty}\n- Bahasa Indonesia\n- Waktu 20 detik per soal\n- Kembalikan HANYA JSON array valid\nFormat JSON:\n[{"text":"...","options":["...","...","...","..."],"correctIndex":0,"timeLimitSec":20}]`;
+          prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda tentang topik: "${aiTopic}".\n\nAturan:\n- 4 pilihan jawaban, 1 benar\n- Kesulitan: ${aiDifficulty}\n- Bahasa Indonesia\n- Kembalikan HANYA JSON array valid\nFormat:\n[{"text":"...","options":["A","B","C","D"],"correctIndex":0,"timeLimitSec":20}]`;
         }
         const rawText = await callAIGenerate(prompt);
         const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(cleanJson);
         if (Array.isArray(parsed)) {
-          const formatted = parsed.map((q: any, idx: number) => ({
-            id: `ai_q_${Date.now()}_${i}_${idx}`, text: q.text || 'Soal tanpa teks',
-            options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['-', '-', '-', '-'],
-            correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
-            timeLimitSec: q.timeLimitSec || 20, imageUrl: null
-          }));
+          const formatted = parsed.map((q: any, idx: number) => ({ id: `ai_q_${Date.now()}_${i}_${idx}`, text: q.text || 'Soal', options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['-', '-', '-', '-'], correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0, timeLimitSec: q.timeLimitSec || 20, imageUrl: null }));
           allQuestions = [...allQuestions, ...formatted];
         }
         setAiProgress(Math.round(((i + 1) / totalBatches) * 100));
       }
-      if (allQuestions.length === 0) throw new Error('AI tidak mengembalikan soal yang valid.');
+      if (allQuestions.length === 0) throw new Error('AI tidak mengembalikan soal valid.');
       setAiGenerated(allQuestions);
     } catch (e: any) { alert('Error: ' + e.message); }
     setAiGenerating(false);
@@ -135,18 +208,15 @@ export default function HostHome() {
     setLoading(true);
     const bankName = aiMode === 'material' ? ('AI: ' + aiMaterial.slice(0, 40)) : ('AI: ' + aiTopic);
     const res = await fetch('/api/banks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: bankName, subject: 'Umum', questions: aiGenerated }) });
-    if (res.ok) { setShowAi(false); setAiGenerated([]); setAiMaterial(''); setAiTopic(''); fetchBanks(); alert('Bank soal AI berhasil disimpan!'); }
-    else alert('Gagal menyimpan bank soal AI.');
+    if (res.ok) { setShowAi(false); setAiGenerated([]); setAiMaterial(''); setAiTopic(''); fetchBanks(); alert('Bank soal AI tersimpan!'); }
+    else alert('Gagal menyimpan.');
     setLoading(false);
   }
 
   function generateCodes() {
     const names = namesInput.split('\n').map(n => n.trim()).filter(n => n);
     if (names.length === 0) { alert('Masukkan minimal 1 nama.'); return; }
-    const codes = names.map(name => {
-      const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
-      return { name, code: `${name.split(' ')[0].toUpperCase()}-${randomStr}` };
-    });
+    const codes = names.map(name => { const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase(); return { name, code: `${name.split(' ')[0].toUpperCase()}-${randomStr}` }; });
     setGeneratedCodes(codes);
   }
 
@@ -158,22 +228,13 @@ export default function HostHome() {
     const aiConfig = aiReviewEnabled ? { provider: aiProvider, apiKey: aiApiKey } : null;
     const res = await fetch('/api/sessions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        bankId: selected, hostName, hostAvatar, hostLogo, timeLimitSec: timeLimit, autoReveal, 
-        groupMode, groupCount, groupNames, eliminationMode, bossQuestions, shuffleOptions,
-        tournamentMode, expectedPlayers: generatedCodes.length, invitationCodes: generatedCodes, aiConfig,
-        autoPlay, autoPlayDelaySec
-      }),
+      body: JSON.stringify({ bankId: selected, hostName, hostAvatar, hostLogo, timeLimitSec: timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, bossQuestions, shuffleOptions, tournamentMode, expectedPlayers: generatedCodes.length, invitationCodes: generatedCodes, aiConfig, autoPlay, autoPlayDelaySec }),
     });
     const data = await res.json();
     if (data.session) {
       if (tournamentMode) {
         const origin = window.location.origin;
-        const exportData = generatedCodes.map((c, i) => {
-          const magicLink = `${origin}/play/${data.session.pin}?name=${encodeURIComponent(c.name)}&code=${c.code}`;
-          const waText = `Halo ${c.name}, selamat datang di turnamen kuis! Silakan klik link ini: ${magicLink}`;
-          return { No: i + 1, Nama: c.name, 'Kode Undangan': c.code, 'Magic Link': magicLink, 'Link WhatsApp': `https://wa.me/?text=${encodeURIComponent(waText)}` };
-        });
+        const exportData = generatedCodes.map((c, i) => { const magicLink = `${origin}/play/${data.session.pin}?name=${encodeURIComponent(c.name)}&code=${c.code}`; const waText = `Halo ${c.name}, selamat datang di turnamen kuis! Silakan klik link ini: ${magicLink}`; return { No: i + 1, Nama: c.name, 'Kode Undangan': c.code, 'Magic Link': magicLink, 'Link WhatsApp': `https://wa.me/?text=${encodeURIComponent(waText)}` }; });
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Peserta_Turnamen");
@@ -210,12 +271,7 @@ export default function HostHome() {
       const answerStr = (normalizedRow.jawaban || 'A').toString().toUpperCase();
       const correctMap: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
       const questionTime = parseInt(normalizedRow.waktu) || 20;
-      return {
-        id: 'q_' + (index + 1), text: normalizedRow.soal || 'Soal tanpa teks',
-        options: [normalizedRow.opsi_a || '-', normalizedRow.opsi_b || '-', normalizedRow.opsi_c || '-', normalizedRow.opsi_d || '-'],
-        correctIndex: correctMap[answerStr] !== undefined ? correctMap[answerStr] : 0,
-        timeLimitSec: questionTime, imageUrl: normalizedRow.gambar_url || normalizedRow.gambar || null 
-      };
+      return { id: 'q_' + (index + 1), text: normalizedRow.soal || 'Soal tanpa teks', options: [normalizedRow.opsi_a || '-', normalizedRow.opsi_b || '-', normalizedRow.opsi_c || '-', normalizedRow.opsi_d || '-'], correctIndex: correctMap[answerStr] !== undefined ? correctMap[answerStr] : 0, timeLimitSec: questionTime, imageUrl: normalizedRow.gambar_url || normalizedRow.gambar || null };
     }).filter(q => q.text !== 'Soal tanpa teks');
     if (questions.length === 0) { alert('File kosong.'); return; }
     setParsedQuestions(questions);
@@ -228,10 +284,7 @@ export default function HostHome() {
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     if (isExcel) {
       const reader = new FileReader();
-      reader.onload = (evt) => {
-        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
-        processQuestions(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]));
-      };
+      reader.onload = (evt) => { const wb = XLSX.read(evt.target?.result, { type: 'binary' }); processQuestions(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])); };
       reader.readAsBinaryString(file);
     } else {
       Papa.parse(file, { header: true, skipEmptyLines: true, complete: (r) => processQuestions(r.data), error: (e) => alert(e.message) });
@@ -242,11 +295,8 @@ export default function HostHome() {
     if (parsedQuestions.length === 0 || !newBankName.trim()) return;
     setLoading(true);
     const res = await fetch('/api/banks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newBankName, subject: 'Umum', questions: parsedQuestions }) });
-    if (res.ok) {
-      setIsImporting(false); setParsedQuestions([]); setNewBankName('');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      fetchBanks(); alert('Bank soal tersimpan!');
-    } else alert('Gagal menyimpan.');
+    if (res.ok) { setIsImporting(false); setParsedQuestions([]); setNewBankName(''); if (fileInputRef.current) fileInputRef.current.value = ''; fetchBanks(); alert('Bank soal tersimpan!'); }
+    else alert('Gagal menyimpan.');
     setLoading(false);
   }
 
@@ -260,9 +310,9 @@ export default function HostHome() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-6 flex justify-between items-center">
+      <div className="mb-6 flex justify-between items-center flex-wrap gap-2">
         <Link href="/" className="text-sm text-slate-400 hover:text-white transition">← Kembali ke Beranda</Link>
-        <div className="flex gap-3 items-center">
+        <div className="flex gap-3 items-center flex-wrap">
           <Link href="/host/hall-of-fame" className="text-sm text-amber-300 hover:text-amber-200 font-semibold">🏆 Hall of Fame</Link>
           <Link href="/host/history" className="text-sm text-slate-300 hover:text-white font-semibold">📚 Riwayat</Link>
           <button onClick={() => { setShowAi(!showAi); setIsImporting(false); }} className="text-sm font-semibold text-purple-400 hover:text-purple-300">{showAi ? 'Tutup AI' : '🤖 Buat Soal AI'}</button>
@@ -276,7 +326,6 @@ export default function HostHome() {
       {showAi && (
         <div className="card mt-6 border-purple-500/50 bg-purple-500/5 animate-slide-up">
           <h2 className="font-semibold text-lg mb-2 text-purple-400">🤖 Buat Soal Otomatis dengan AI</h2>
-          <p className="text-xs text-slate-400 mb-4">Pilih provider AI, masukkan API Key. {aiProvider === 'gemini' && <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-purple-300 underline">Dapatkan Gemini gratis</a>}{aiProvider === 'groq' && <a href="https://console.groq.com/keys" target="_blank" className="text-purple-300 underline">Dapatkan Groq gratis</a>}{aiProvider === 'openrouter' && <a href="https://openrouter.ai/keys" target="_blank" className="text-purple-300 underline">Dapatkan OpenRouter gratis</a>}</p>
           <div className="space-y-4">
             <div className="flex gap-2">
               {(['gemini', 'groq', 'openrouter'] as const).map(p => (<button key={p} onClick={() => setAiProvider(p)} className={`flex-1 py-2 rounded-xl text-sm font-semibold capitalize transition ${aiProvider === p ? 'bg-purple-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>{p}</button>))}
@@ -289,7 +338,7 @@ export default function HostHome() {
             {aiMode === 'material' ? (<textarea value={aiMaterial} onChange={e => setAiMaterial(e.target.value)} placeholder="Tempelkan materi pelajaran..." className="w-full h-32 rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm" />) : (<input value={aiTopic} onChange={e => setAiTopic(e.target.value)} placeholder="Contoh: Fotosintesis, Hukum Newton..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm" />)}
             <div className="grid grid-cols-2 gap-2">
               <div><label className="block text-xs text-slate-400 mb-1">Jumlah Soal</label><select value={aiNumQuestions} onChange={e => setAiNumQuestions(Number(e.target.value))} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm"><option value={5} className="bg-slate-800">5 Soal</option><option value={10} className="bg-slate-800">10 Soal</option><option value={20} className="bg-slate-800">20 Soal</option><option value={30} className="bg-slate-800">30 Soal</option><option value={50} className="bg-slate-800">50 Soal</option></select></div>
-              <div><label className="block text-xs text-slate-400 mb-1">Kesulitan</label><select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm"><option value="Mudah" className="bg-slate-800">Mudah (SD)</option><option value="Sedang" className="bg-slate-800">Sedang (SMP)</option><option value="Sulit" className="bg-slate-800">Sulit (SMA)</option></select></div>
+              <div><label className="block text-xs text-slate-400 mb-1">Kesulitan</label><select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm"><option value="Mudah" className="bg-slate-800">Mudah</option><option value="Sedang" className="bg-slate-800">Sedang</option><option value="Sulit" className="bg-slate-800">Sulit</option></select></div>
             </div>
             <button onClick={generateWithAI} disabled={aiGenerating} className="btn-primary w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50">{aiGenerating ? `✨ AI membuat soal... (${aiProgress}%)` : `✨ Generate ${aiNumQuestions} Soal`}</button>
             {aiGenerated.length > 0 && (<div className="mt-4 pt-4 border-t border-white/10"><div className="text-sm text-emerald-400 mb-3">✓ {aiGenerated.length} soal dibuat!</div><div className="max-h-64 overflow-y-auto space-y-2 mb-3">{aiGenerated.map((q, i) => (<div key={q.id} className="bg-white/5 p-3 rounded-lg text-sm"><div className="font-medium mb-1">{i + 1}. {q.text}</div><div className="grid grid-cols-2 gap-1 text-xs">{q.options.map((o: string, idx: number) => (<div key={idx} className={idx === q.correctIndex ? 'text-emerald-400 font-bold' : 'text-slate-400'}>{String.fromCharCode(65 + idx)}. {o}</div>))}</div></div>))}</div><button onClick={saveAIGenerated} disabled={loading} className="btn-primary w-full bg-emerald-600 hover:bg-emerald-700">{loading ? 'Menyimpan...' : `💾 Simpan ${aiGenerated.length} Soal`}</button></div>)}
@@ -324,44 +373,27 @@ export default function HostHome() {
           </div>
         </div>
 
-        {/* AUTO-PLAY MODE */}
         <div className="border-t border-white/10 pt-4 bg-gradient-to-r from-cyan-500/5 to-blue-500/5 -mx-5 px-5 pb-4 rounded-xl border border-cyan-500/20">
           <label className="flex items-center gap-3 cursor-pointer mb-2">
-            <input type="checkbox" checked={autoPlay} onChange={e => setAutoPlay(e.target.checked)} className="h-5 w-5 rounded bg-cyan-500/20 border-cyan-500/50 text-cyan-500 focus:ring-cyan-500 cursor-pointer" />
-            <div>
-              <div className="font-bold text-cyan-400">🤖 Auto-Play Mode (Otomatis)</div>
-              <div className="text-xs text-slate-400 mt-0.5">Kuis berjalan otomatis tanpa perlu klik manual. Cocok untuk guru yang ingin fokus mengajar.</div>
-            </div>
+            <input type="checkbox" checked={autoPlay} onChange={e => setAutoPlay(e.target.checked)} className="h-5 w-5 rounded bg-cyan-500/20 border-cyan-500/50 text-cyan-500 cursor-pointer" />
+            <div><div className="font-bold text-cyan-400">🤖 Auto-Play Mode (Otomatis)</div><div className="text-xs text-slate-400 mt-0.5">Kuis berjalan otomatis tanpa perlu klik manual.</div></div>
           </label>
-          {autoPlay && (
-            <div className="bg-cyan-950/30 p-3 rounded-xl border border-cyan-500/20 mt-3 animate-slide-up">
-              <label className="block text-xs text-slate-400 mb-1">Jeda Antar Soal (setelah jawaban dibuka)</label>
-              <select value={autoPlayDelaySec} onChange={e => setAutoPlayDelaySec(Number(e.target.value))} className="w-full rounded-xl bg-slate-800 border border-cyan-500/30 px-4 py-2 outline-none focus:border-cyan-500">
-                <option value={3}>3 Detik (Cepat)</option>
-                <option value={5}>5 Detik (Standar)</option>
-                <option value={8}>8 Detik (Santai)</option>
-                <option value={10}>10 Detik (Bisa Dijelaskan)</option>
-              </select>
-            </div>
-          )}
+          {autoPlay && (<div className="bg-cyan-950/30 p-3 rounded-xl border border-cyan-500/20 mt-3"><label className="block text-xs text-slate-400 mb-1">Jeda Antar Soal</label><select value={autoPlayDelaySec} onChange={e => setAutoPlayDelaySec(Number(e.target.value))} className="w-full rounded-xl bg-slate-800 border border-cyan-500/30 px-4 py-2 outline-none focus:border-cyan-500"><option value={3}>3 Detik</option><option value={5}>5 Detik</option><option value={8}>8 Detik</option><option value={10}>10 Detik</option></select></div>)}
         </div>
 
         <div className="border-t border-white/10 pt-4">
-          <label className="flex items-center gap-3 cursor-pointer mb-2">
-            <input type="checkbox" checked={aiReviewEnabled} onChange={e => setAiReviewEnabled(e.target.checked)} className="h-5 w-5 rounded bg-purple-500/20 border-purple-500/50 text-purple-500 cursor-pointer" />
-            <div><div className="font-bold text-purple-400">📖 Review Mode + AI Explanation</div><div className="text-xs text-slate-400 mt-0.5">Siswa bisa lihat penjelasan AI untuk soal salah.</div></div>
-          </label>
-          {aiReviewEnabled && (<div className="bg-purple-950/30 p-3 rounded-xl border border-purple-500/20 mt-3 animate-slide-up"><div className="text-xs text-slate-300"><b>Provider:</b> {aiProvider.toUpperCase()} {aiApiKey ? `(✓ Key terisi)` : `(⚠️ Key belum diisi)`}</div></div>)}
+          <label className="flex items-center gap-3 cursor-pointer mb-2"><input type="checkbox" checked={aiReviewEnabled} onChange={e => setAiReviewEnabled(e.target.checked)} className="h-5 w-5 rounded bg-purple-500/20 border-purple-500/50 text-purple-500 cursor-pointer" /><div><div className="font-bold text-purple-400">📖 Review Mode + AI Explanation</div></div></label>
+          {aiReviewEnabled && (<div className="bg-purple-950/30 p-3 rounded-xl border border-purple-500/20 mt-3"><div className="text-xs text-slate-300"><b>Provider:</b> {aiProvider.toUpperCase()} {aiApiKey ? `(✓)` : `(⚠️ Key kosong)`}</div></div>)}
         </div>
 
         <div className="border-t border-white/10 pt-4">
           <label className="flex items-center gap-3 cursor-pointer mb-2"><input type="checkbox" checked={groupMode} onChange={e => setGroupMode(e.target.checked)} className="h-5 w-5 rounded bg-emerald-500/20 border-emerald-500/50 text-emerald-500 cursor-pointer" /><div><div className="font-bold text-emerald-400">Mode Multi-Grup (Perkelompok)</div></div></label>
-          {groupMode && (<div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3 mt-3 animate-slide-up"><div><label className="block text-xs text-slate-400 mb-1">Jumlah Grup</label><select value={groupCount} onChange={e => setGroupCount(Number(e.target.value))} className="w-full rounded-xl bg-slate-800 border border-white/10 px-4 py-2 outline-none focus:border-emerald-500"><option value={2}>2 Grup</option><option value={3}>3 Grup</option><option value={4}>4 Grup</option></select></div><div className="grid grid-cols-2 gap-2 mt-2">{Array.from({ length: groupCount }).map((_, i) => (<div key={i}><label className="block text-xs text-slate-400 mb-1">Nama Grup {i + 1}</label><input value={groupNames[i]} onChange={e => updateGroupName(i, e.target.value)} className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-sm outline-none focus:border-emerald-500" /></div>))}</div></div>)}
+          {groupMode && (<div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3 mt-3"><div><label className="block text-xs text-slate-400 mb-1">Jumlah Grup</label><select value={groupCount} onChange={e => setGroupCount(Number(e.target.value))} className="w-full rounded-xl bg-slate-800 border border-white/10 px-4 py-2 outline-none focus:border-emerald-500"><option value={2}>2 Grup</option><option value={3}>3 Grup</option><option value={4}>4 Grup</option></select></div><div className="grid grid-cols-2 gap-2 mt-2">{Array.from({ length: groupCount }).map((_, i) => (<div key={i}><label className="block text-xs text-slate-400 mb-1">Nama Grup {i + 1}</label><input value={groupNames[i]} onChange={e => updateGroupName(i, e.target.value)} className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-sm outline-none focus:border-emerald-500" /></div>))}</div></div>)}
         </div>
 
         <div className="border-t border-white/10 pt-4">
-          <label className="flex items-center gap-3 cursor-pointer mb-2"><input type="checkbox" checked={tournamentMode} onChange={e => setTournamentMode(e.target.checked)} className="h-5 w-5 rounded bg-amber-500/20 border-amber-500/50 text-amber-500 cursor-pointer" /><div><div className="font-bold text-amber-400">Mode Turnamen (Kuota & Kode Undangan)</div></div></label>
-          {tournamentMode && (<div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3 mt-3 animate-slide-up"><p className="text-xs text-slate-400">Nama peserta (satu per baris).</p><textarea value={namesInput} onChange={e => setNamesInput(e.target.value)} placeholder="Budi Santoso&#10;Siti Aminah" className="w-full h-32 rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-amber-500 font-mono text-sm" /><button onClick={generateCodes} className="btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30 text-sm w-full">🔄 Generate Kode</button>{generatedCodes.length > 0 && <div className="text-sm text-emerald-400 mt-2">✓ {generatedCodes.length} Kode dibuat.</div>}</div>)}
+          <label className="flex items-center gap-3 cursor-pointer mb-2"><input type="checkbox" checked={tournamentMode} onChange={e => setTournamentMode(e.target.checked)} className="h-5 w-5 rounded bg-amber-500/20 border-amber-500/50 text-amber-500 cursor-pointer" /><div><div className="font-bold text-amber-400">Mode Turnamen</div></div></label>
+          {tournamentMode && (<div className="bg-black/20 p-4 rounded-xl border border-white/5 space-y-3 mt-3"><textarea value={namesInput} onChange={e => setNamesInput(e.target.value)} placeholder="Budi Santoso&#10;Siti Aminah" className="w-full h-32 rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-amber-500 font-mono text-sm" /><button onClick={generateCodes} className="btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30 text-sm w-full">🔄 Generate Kode</button>{generatedCodes.length > 0 && <div className="text-sm text-emerald-400">✓ {generatedCodes.length} Kode dibuat.</div>}</div>)}
         </div>
 
         <div>
@@ -373,12 +405,15 @@ export default function HostHome() {
                 <div onClick={() => setSelected(b.id)} className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-white/5 transition">
                   <div className="text-left flex-1"><div className="font-semibold">{b.name}</div><div className="text-xs text-slate-400">{b.subject} - {b.questionCount} soal</div></div>
                   <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setExpandedBank(expandedBank === b.id ? null : b.id)} className="p-2 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition">👁️</button>
-                    <button onClick={(e) => deleteBank(b.id, e)} className="p-2 rounded-lg text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition">🗑️</button>
+                    <button onClick={() => openEditor(b)} className="p-2 rounded-lg text-slate-400 hover:bg-brand-500/20 hover:text-brand-400 transition" title="Edit Soal">✏️</button>
+                    <button onClick={() => setExpandedBank(expandedBank === b.id ? null : b.id)} className="p-2 rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition" title="Preview">👁️</button>
+                    <button onClick={(e) => deleteBank(b.id, e)} className="p-2 rounded-lg text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition" title="Hapus">🗑️</button>
                     {selected === b.id && <span className="text-brand-500 ml-1 font-bold">✓</span>}
                   </div>
                 </div>
-                {expandedBank === b.id && b.questions && (<div className="px-4 pb-4 pt-2 border-t border-white/5 bg-black/20"><ol className="text-sm space-y-1.5 text-slate-300">{b.questions.map((q, i) => (<li key={q.id} className="flex gap-2"><span className="text-brand-500 font-mono">{i + 1}.</span><span className="line-clamp-2">{q.text}</span></li>))}</ol></div>)}
+                {expandedBank === b.id && b.questions && (
+                  <div className="px-4 pb-4 pt-2 border-t border-white/5 bg-black/20"><ol className="text-sm space-y-1.5 text-slate-300">{b.questions.map((q: any, i: number) => (<li key={q.id} className="flex gap-2"><span className="text-brand-500 font-mono">{i + 1}.</span><span className="line-clamp-2">{q.text}</span></li>))}</ol></div>
+                )}
               </div>
             ))}
           </div>
@@ -388,7 +423,7 @@ export default function HostHome() {
           <div className="border-t border-white/10 pt-4 mt-2">
             <label className="block text-sm text-slate-400 mb-2">Pilih Soal Boss Battle (Poin 3x)</label>
             <div className="grid gap-2 max-h-60 overflow-y-auto pr-2">
-              {selectedBank.questions.map((q, i) => (
+              {selectedBank.questions.map((q: any, i: number) => (
                 <label key={i} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${bossQuestions.includes(i) ? 'border-rose-500/50 bg-rose-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
                   <input type="checkbox" checked={bossQuestions.includes(i)} onChange={() => toggleBossQuestion(i)} className="mt-1 h-4 w-4 rounded bg-slate-800 border-white/20 text-rose-500 cursor-pointer" />
                   <div><div className="text-xs text-slate-400">Soal {i + 1}</div><div className="text-sm font-medium">{q.text}</div></div>
@@ -400,6 +435,100 @@ export default function HostHome() {
 
         <button onClick={createSession} disabled={loading || !selected} className="btn-primary w-full">{loading ? 'Membuat sesi...' : 'Mulai Sesi Baru →'}</button>
       </div>
+
+      {/* ================= EDITOR MODAL ================= */}
+      {editingBank && (
+        <div className="fixed inset-0 z-[150] bg-slate-950/95 backdrop-blur-md overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-4 py-6">
+            {/* Header Sticky */}
+            <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border border-brand-500/30 rounded-2xl p-4 mb-4 flex items-center justify-between gap-2">
+              <div className="flex-1">
+                <div className="text-xs uppercase text-brand-400 font-bold tracking-wider">✏️ Editor Soal</div>
+                <div className="text-lg font-bold truncate">{editingBank.name}</div>
+                <div className="text-xs text-slate-400">{editingBank.questions?.length || 0} soal</div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={closeEditor} className="btn-ghost text-sm px-3">Batal</button>
+                <button onClick={saveEditedBank} disabled={savingBank} className="btn-primary text-sm px-4">
+                  {savingBank ? 'Menyimpan...' : '💾 Simpan Semua'}
+                </button>
+              </div>
+            </div>
+
+            {/* Meta Bank */}
+            <div className="card mb-4 space-y-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Nama Bank Soal</label>
+                <input value={editingBank.name} onChange={e => updateBankMeta('name', e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 font-semibold" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Mata Pelajaran</label>
+                <input value={editingBank.subject} onChange={e => updateBankMeta('subject', e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 text-sm" />
+              </div>
+            </div>
+
+            {/* Question List */}
+            <div className="space-y-4">
+              {editingBank.questions?.map((q: any, qi: number) => (
+                <div key={q.id} className="card border-white/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-brand-500/20 text-brand-400 font-bold px-3 py-1 rounded-lg text-sm">Soal {qi + 1}</span>
+                    </div>
+                    <button onClick={() => deleteQuestionFromEditor(qi)} className="text-rose-400 hover:text-rose-300 text-sm font-semibold px-2 py-1 rounded hover:bg-rose-500/10">
+                      🗑️ Hapus Soal
+                    </button>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="block text-xs text-slate-400 mb-1">Pertanyaan</label>
+                    <textarea value={q.text} onChange={e => updateQuestionField(qi, 'text', e.target.value)} placeholder="Tulis pertanyaan di sini..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 text-sm" rows={2} />
+                  </div>
+
+                  <div className="space-y-2 mb-3">
+                    <label className="block text-xs text-slate-400 mb-1">Pilihan Jawaban (klik radio untuk tandai jawaban benar)</label>
+                    {q.options.map((opt: string, oi: number) => {
+                      const isCorrect = q.correctIndex === oi;
+                      return (
+                        <div key={oi} className={`flex items-center gap-2 p-2 rounded-lg border transition ${isCorrect ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-white/10 bg-white/5'}`}>
+                          <input type="radio" name={`correct-${q.id}`} checked={isCorrect} onChange={() => updateQuestionField(qi, 'correctIndex', oi)} className="h-4 w-4 cursor-pointer accent-emerald-500" />
+                          <span className={`font-mono font-bold w-7 text-center rounded text-sm ${isCorrect ? 'text-emerald-400' : 'text-brand-400'}`}>{String.fromCharCode(65 + oi)}</span>
+                          <input type="text" value={opt} onChange={e => updateOptionField(qi, oi, e.target.value)} placeholder={`Opsi ${String.fromCharCode(65 + oi)}`} className="flex-1 rounded bg-black/20 border border-white/5 px-2 py-1.5 outline-none focus:border-brand-500 text-sm" />
+                          {isCorrect && <span className="text-[10px] font-bold text-emerald-400">✓ Benar</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">URL Gambar (opsional)</label>
+                      <input type="text" value={q.imageUrl || ''} onChange={e => updateQuestionField(qi, 'imageUrl', e.target.value || null)} placeholder="https://..." className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 outline-none focus:border-brand-500 text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Waktu (detik)</label>
+                      <input type="number" min={5} max={120} value={q.timeLimitSec || 20} onChange={e => updateQuestionField(qi, 'timeLimitSec', Number(e.target.value) || 20)} className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 outline-none focus:border-brand-500 text-xs" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add Button */}
+            <button onClick={addQuestionToEditor} className="w-full mt-4 py-3 rounded-xl border-2 border-dashed border-brand-500/50 text-brand-400 hover:bg-brand-500/10 hover:border-brand-500 font-semibold transition">
+              + Tambah Soal Baru
+            </button>
+
+            {/* Bottom Actions */}
+            <div className="mt-6 mb-8 flex gap-2">
+              <button onClick={closeEditor} className="btn-ghost flex-1">Batal</button>
+              <button onClick={saveEditedBank} disabled={savingBank} className="btn-primary flex-1">
+                {savingBank ? 'Menyimpan...' : '💾 Simpan Semua Perubahan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
