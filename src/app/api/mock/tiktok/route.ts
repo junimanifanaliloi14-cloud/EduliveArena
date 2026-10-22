@@ -1,5 +1,4 @@
 // Simulator tiktok-live-connector: POST chat message -> dianggap jawaban murid.
-// Body: { pin, username, message }  -> message seperti "A", "B", "C", atau "D"
 import { NextResponse } from 'next/server';
 import { store } from '@/lib/store.mjs';
 
@@ -13,8 +12,8 @@ export async function POST(req: Request) {
   const choice = CHOICE_MAP[(message || '').trim()];
   if (choice === undefined) return NextResponse.json({ error: 'Jawaban tidak valid (A/B/C/D)' }, { status: 400 });
 
-  // Auto-register sebagai player berdasarkan username (lazy registration)
-  let player = Array.from(session.players.values()).find((p: any) => p.name === username);
+  // Tambahan : any untuk memperbaiki Type error saat build
+  let player: any = Array.from(session.players.values()).find((p: any) => p.name === username);
   if (!player) player = store.joinSession(session.id, username);
 
   try {

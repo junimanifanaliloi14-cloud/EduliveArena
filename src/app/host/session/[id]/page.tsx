@@ -9,6 +9,7 @@ import JSZip from 'jszip';
 import { Certificate } from '@/components/Certificate';
 import { ParentReport } from '@/components/ParentReport';
 import { saveSessionToHistory } from '@/lib/historyHelper';
+import { addSessionToHallOfFame } from '@/lib/hallOfFame';
 
 export default function ControlPanel({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -26,6 +27,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   const [downloadingType, setDownloadingType] = useState<'cert' | 'report' | null>(null);
   const [downloadingPlayerId, setDownloadingPlayerId] = useState<string | null>(null);
   const [savedToHistory, setSavedToHistory] = useState(false);
+  const [savedToHallOfFame, setSavedToHallOfFame] = useState(false);
 
   async function action(a: string) {
     setBusy(a);
@@ -44,6 +46,14 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       setSavedToHistory(true);
     }
   }, [report, state, savedToHistory]);
+
+  useEffect(() => {
+    if (report && !savedToHallOfFame) {
+      const result = addSessionToHallOfFame(report.players);
+      console.log('[Hall of Fame] Saved:', result);
+      setSavedToHallOfFame(true);
+    }
+  }, [report, savedToHallOfFame]);
 
   async function captureElement(ref: React.RefObject<HTMLDivElement>): Promise<string> {
     if (!ref.current) throw new Error('Element ref belum siap');
@@ -158,6 +168,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
             {s.eliminationMode && <span className="text-xs bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/30">Eliminasi</span>}
             {s.tournamentMode && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">🏆 Turnamen</span>}
             {savedToHistory && <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">💾 Tersimpan</span>}
+            {savedToHallOfFame && <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">🏆 Hall of Fame</span>}
           </div>
           <h1 className="text-2xl font-bold mt-1">{s.bankName}</h1>
           <p className="text-slate-400 text-sm">{s.hostName} - {state.playerCount} murid</p>
@@ -203,15 +214,11 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               {s.tournamentMode && <div className="text-sm text-amber-400 font-bold ml-2">Ready: {readyCount} / {state.allPlayers.length}</div>}
             </>
           )}
-
-          {/* Kontrol Auto-Play */}
           {s.isAutoPlaying && (
             <button onClick={() => action('stop-autoplay')} disabled={!!busy} className="btn-primary bg-rose-600 hover:bg-rose-700">
-              {busy === 'stop-autoplay' ? '...' : '⏹ Stop Auto-Play (Manual)'}
+              {busy === 'stop-autoplay' ? '...' : '⏹ Stop Auto-Play'}
             </button>
           )}
-
-          {/* Kontrol Manual (hanya tampil jika tidak auto-play) */}
           {!s.isAutoPlaying && (s.status === 'live' || s.status === 'lobby') && s.questionState === 'idle' && (
             <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : s.currentQuestionIndex < 0 ? 'Tampilkan Soal 1' : 'Soal Berikutnya ->'}</button>
           )}
@@ -227,12 +234,9 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
           {!s.isAutoPlaying && s.questionState === 'revealed' && s.currentQuestionIndex + 1 >= s.totalQuestions && s.status !== 'ended' && (
             <button onClick={() => action('end')} disabled={!!busy} className="btn-danger">{busy === 'end' ? '...' : 'Akhiri Sesi'}</button>
           )}
-
-          {/* Pause/Resume tetap tersedia saat auto-play */}
           {s.isAutoPlaying && s.questionState === 'showing' && (
             <button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>{s.isPaused ? '▶ Lanjut' : '⏸ Jeda'}</button>
           )}
-
           <div className="border-l border-white/20 pl-2 ml-2">
             <button onClick={triggerMockGift} className="btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30 text-sm">🎁 Test Gift</button>
           </div>

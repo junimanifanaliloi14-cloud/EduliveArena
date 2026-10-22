@@ -263,6 +263,7 @@ export default function HostHome() {
       <div className="mb-6 flex justify-between items-center">
         <Link href="/" className="text-sm text-slate-400 hover:text-white transition">← Kembali ke Beranda</Link>
         <div className="flex gap-3 items-center">
+          <Link href="/host/hall-of-fame" className="text-sm text-amber-300 hover:text-amber-200 font-semibold">🏆 Hall of Fame</Link>
           <Link href="/host/history" className="text-sm text-slate-300 hover:text-white font-semibold">📚 Riwayat</Link>
           <button onClick={() => { setShowAi(!showAi); setIsImporting(false); }} className="text-sm font-semibold text-purple-400 hover:text-purple-300">{showAi ? 'Tutup AI' : '🤖 Buat Soal AI'}</button>
           <button onClick={() => { setIsImporting(!isImporting); setShowAi(false); }} className="text-sm text-brand-500 hover:text-brand-400 font-semibold">{isImporting ? 'Batal Import' : '+ Import Excel'}</button>
