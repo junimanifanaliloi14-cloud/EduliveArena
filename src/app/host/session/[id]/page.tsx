@@ -7,6 +7,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { toPng } from 'html-to-image';
 import JSZip from 'jszip';
 import { Certificate } from '@/components/Certificate';
+import { ParentReport } from '@/components/ParentReport';
 
 export default function ControlPanel({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -14,12 +15,16 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   const [busy, setBusy] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
 
-  // State Sertifikat
+  // State Sertifikat & Rapor
   const certRef = useRef<HTMLDivElement>(null);
-  const [currentCertPlayer, setCurrentCertPlayer] = useState<any>(null);
-  const [currentCertRank, setCurrentCertRank] = useState(1);
-  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
+  const [currentPlayer, setCurrentPlayer] = useState<any>(null);
+  const [currentRank, setCurrentRank] = useState(1);
+  const [isDownloadingAllCerts, setIsDownloadingAllCerts] = useState(false);
+  const [isDownloadingAllReports, setIsDownloadingAllReports] = useState(false);
   const [certProgress, setCertProgress] = useState(0);
+  const [reportProgress, setReportProgress] = useState(0);
+  const [downloadingType, setDownloadingType] = useState<'cert' | 'report' | null>(null);
   const [downloadingPlayerId, setDownloadingPlayerId] = useState<string | null>(null);
 
   async function action(a: 'start' | 'next' | 'reveal' | 'end' | 'pause' | 'resume') {
@@ -36,36 +41,39 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     setBusy(null);
   }
 
-  // ================= FUNGSI SERTIFIKAT =================
-  async function captureCertificate(): Promise<string> {
-    if (!certRef.current) throw new Error('Certificate ref belum siap');
-    return await toPng(certRef.current, { cacheBust: true, pixelRatio: 2, skipFonts: true });
+  // ================= FUNGSI CAPTURE =================
+  async function captureElement(ref: React.RefObject<HTMLDivElement>): Promise<string> {
+    if (!ref.current) throw new Error('Element ref belum siap');
+    return await toPng(ref.current, { cacheBust: true, pixelRatio: 2, skipFonts: true });
   }
 
-  async function downloadSingleCertificate(player: any, rank: number) {
+  async function downloadSingle(player: any, rank: number, type: 'cert' | 'report') {
     if (!state) return;
     setDownloadingPlayerId(player.id);
-    setCurrentCertPlayer(player);
-    setCurrentCertRank(rank);
+    setDownloadingType(type);
+    setCurrentPlayer(player);
+    setCurrentRank(rank);
     
     try {
-      // Beri waktu React untuk render Certificate dengan data baru
-      await new Promise(r => setTimeout(r, 300));
-      const dataUrl = await captureCertificate();
+      await new Promise(r => setTimeout(r, 350));
+      const ref = type === 'cert' ? certRef : reportRef;
+      const dataUrl = await captureElement(ref);
       const link = document.createElement('a');
-      link.download = `Sertifikat_${rank}_${player.name.replace(/\s+/g, '_')}.png`;
+      link.download = `${type === 'cert' ? 'Sertifikat' : 'Rapor'}_${rank}_${player.name.replace(/\s+/g, '_')}.png`;
       link.href = dataUrl;
       link.click();
     } catch (e) {
-      alert('Gagal mengunduh sertifikat: ' + (e as Error).message);
+      alert('Gagal mengunduh: ' + (e as Error).message);
     }
     setDownloadingPlayerId(null);
+    setDownloadingType(null);
   }
 
-  async function downloadAllCertificates() {
+  async function downloadAll(type: 'cert' | 'report') {
     if (!report || !state) return;
-    setIsDownloadingAll(true);
-    setCertProgress(0);
+    if (type === 'cert') { setIsDownloadingAllCerts(true); setCertProgress(0); }
+    else { setIsDownloadingAllReports(true); setReportProgress(0); }
+    setDownloadingType(type);
     
     const zip = new JSZip();
     const total = report.players.length;
@@ -73,39 +81,41 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     try {
       for (let i = 0; i < total; i++) {
         const player = report.players[i];
-        setCurrentCertPlayer(player);
-        setCurrentCertRank(i + 1);
+        setCurrentPlayer(player);
+        setCurrentRank(i + 1);
         
-        // Beri waktu React untuk render
         await new Promise(r => setTimeout(r, 350));
         
-        const dataUrl = await captureCertificate();
+        const ref = type === 'cert' ? certRef : reportRef;
+        const dataUrl = await captureElement(ref);
         const base64 = dataUrl.split(',')[1];
         const rankPad = String(i + 1).padStart(2, '0');
-        zip.file(`Sertifikat_${rankPad}_${player.name.replace(/\s+/g, '_')}.png`, base64, { base64: true });
+        const prefix = type === 'cert' ? 'Sertifikat' : 'Rapor';
+        zip.file(`${prefix}_${rankPad}_${player.name.replace(/\s+/g, '_')}.png`, base64, { base64: true });
         
-        setCertProgress(i + 1);
+        if (type === 'cert') setCertProgress(i + 1);
+        else setReportProgress(i + 1);
       }
 
       const blob = await zip.generateAsync({ type: 'blob' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       const safeName = report.bankName.replace(/\s+/g, '_');
-      link.download = `Sertifikat_${safeName}_PIN_${report.pin}.zip`;
+      const prefix = type === 'cert' ? 'Sertifikat' : 'Rapor';
+      link.download = `${prefix}_${safeName}_PIN_${report.pin}.zip`;
       link.click();
     } catch (e) {
       alert('Gagal membuat ZIP: ' + (e as Error).message);
     }
     
-    setIsDownloadingAll(false);
-    setCurrentCertPlayer(null);
-    setCertProgress(0);
+    if (type === 'cert') setIsDownloadingAllCerts(false);
+    else setIsDownloadingAllReports(false);
+    setDownloadingType(null);
+    setCurrentPlayer(null);
   }
 
   function playSound(url: string) {
-    if (socket && state) {
-      socket.emit('host:sound', { sessionId: state.session.id, soundUrl: url });
-    }
+    if (socket && state) socket.emit('host:sound', { sessionId: state.session.id, soundUrl: url });
   }
 
   async function triggerMockGift() {
@@ -170,21 +180,42 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8 space-y-6">
-      {/* SERTIFIKAT TERSEMBUNYI (RENDER OFF-SCREEN) */}
+      {/* HIDDEN RENDER AREA */}
       <div style={{ position: 'fixed', top: '-9999px', left: '-9999px' }}>
-        {currentCertPlayer && report && state && (
-          <Certificate
-            ref={certRef}
-            playerName={currentCertPlayer.name}
-            score={currentCertPlayer.score}
-            rank={currentCertRank}
-            totalPlayers={report.players.length}
-            bankName={report.bankName}
-            hostName={s.hostName}
-            hostAvatar={s.hostAvatar}
-            hostLogo={s.hostLogo}
-            date={new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
-          />
+        {currentPlayer && report && state && (
+          <>
+            <Certificate
+              ref={certRef}
+              playerName={currentPlayer.name}
+              score={currentPlayer.score}
+              rank={currentRank}
+              totalPlayers={report.players.length}
+              bankName={report.bankName}
+              hostName={s.hostName}
+              hostAvatar={s.hostAvatar}
+              hostLogo={s.hostLogo}
+              date={new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+            />
+            <ParentReport
+              ref={reportRef}
+              studentName={currentPlayer.name}
+              score={currentPlayer.score}
+              rank={currentRank}
+              totalPlayers={report.players.length}
+              accuracy={currentPlayer.accuracy}
+              correctCount={currentPlayer.correct}
+              totalQuestions={report.totalQuestions}
+              badges={currentPlayer.badges}
+              bankName={report.bankName}
+              hostName={s.hostName}
+              hostAvatar={s.hostAvatar}
+              hostLogo={s.hostLogo}
+              groupMode={report.groupMode}
+              groupName={currentPlayer.group}
+              date={new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+              hardestQuestions={report.hardestQuestions}
+            />
+          </>
         )}
       </div>
 
@@ -241,9 +272,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       </div>
 
       <section className="card">
-        <h2 className="font-semibold mb-3 flex items-center gap-2">
-          <span>🎵</span> Soundboard Game Show
-        </h2>
+        <h2 className="font-semibold mb-3 flex items-center gap-2"><span>🎵</span> Soundboard Game Show</h2>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => playSound(SFX.drumroll)} className="btn-ghost bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30 text-sm">🥁 Drumroll</button>
           <button onClick={() => playSound(SFX.cheer)} className="btn-ghost bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm">🎉 Sorak Sorai</button>
@@ -257,14 +286,8 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
         <div className="flex flex-wrap gap-2 items-center">
           {s.status === 'lobby' && (
             <>
-              <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">
-                {busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}
-              </button>
-              {s.tournamentMode && (
-                <div className="text-sm text-amber-400 font-bold ml-2">
-                  Ready: {readyCount} / {state.allPlayers.length} Peserta
-                </div>
-              )}
+              <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">{busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}</button>
+              {s.tournamentMode && (<div className="text-sm text-amber-400 font-bold ml-2">Ready: {readyCount} / {state.allPlayers.length} Peserta</div>)}
             </>
           )}
           {(s.status === 'live' || s.status === 'lobby') && s.questionState === 'idle' && (
@@ -273,9 +296,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
           {s.questionState === 'showing' && (
             <>
               <button onClick={() => action('reveal')} disabled={!!busy} className="btn-ghost">{busy === 'reveal' ? '...' : 'Buka Jawaban'}</button>
-              <button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>
-                {s.isPaused ? '▶ Lanjutkan' : '⏸ Jeda'}
-              </button>
+              <button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>{s.isPaused ? '▶ Lanjutkan' : '⏸ Jeda'}</button>
             </>
           )}
           {s.questionState === 'revealed' && s.currentQuestionIndex + 1 < s.totalQuestions && (
@@ -325,13 +346,9 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                   <span className="font-medium text-sm">{p.name}</span>
                   {p.isReady && <span className="text-xs text-emerald-400 font-bold">✓</span>}
                   {p.isEliminated && <span title="Tereliminasi">💀</span>}
-                  {s.groupMode && p.group && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase bg-white/10`}>{p.group}</span>
-                  )}
+                  {s.groupMode && p.group && (<span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase bg-white/10`}>{p.group}</span>)}
                 </div>
-                <button onClick={() => kickPlayer(p.id, p.name)} disabled={busy === 'kick_' + p.id} className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition">
-                  {busy === 'kick_' + p.id ? '...' : '🗑️'}
-                </button>
+                <button onClick={() => kickPlayer(p.id, p.name)} disabled={busy === 'kick_' + p.id} className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition">{busy === 'kick_' + p.id ? '...' : '🗑️'}</button>
               </div>
             ))}
           </div>
@@ -346,20 +363,25 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               <div className="text-sm text-slate-400">PIN {report.pin} - {report.totalQuestions} soal - {report.players.length} murid</div>
               {report.groupMode && report.groupScores && (
                 <div className="text-sm mt-1 flex gap-4 font-semibold">
-                  {Object.entries(report.groupScores).map(([name, score]: any) => (
-                    <span key={name}>{name}: <span className="text-brand-400">{score}</span></span>
-                  ))}
+                  {Object.entries(report.groupScores).map(([name, score]: any) => (<span key={name}>{name}: <span className="text-brand-400">{score}</span></span>))}
                 </div>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
               <button onClick={downloadCSV} className="btn-primary bg-slate-600 hover:bg-slate-700 text-sm px-3">⬇️ CSV</button>
               <button 
-                onClick={downloadAllCertificates} 
-                disabled={isDownloadingAll}
+                onClick={() => downloadAll('report')} 
+                disabled={isDownloadingAllReports}
+                className="btn-primary bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-sm px-3 disabled:opacity-50"
+              >
+                {isDownloadingAllReports ? `📄 ${reportProgress}/${report.players.length}...` : '📄 Unduh Semua Rapor (ZIP)'}
+              </button>
+              <button 
+                onClick={() => downloadAll('cert')} 
+                disabled={isDownloadingAllCerts}
                 className="btn-primary bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-sm px-3 disabled:opacity-50"
               >
-                {isDownloadingAll ? `📜 ${certProgress}/${report.players.length}...` : '📜 Unduh Semua Sertifikat (ZIP)'}
+                {isDownloadingAllCerts ? `📜 ${certProgress}/${report.players.length}...` : '📜 Unduh Semua Sertifikat (ZIP)'}
               </button>
             </div>
           </div>
@@ -374,7 +396,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                   <th className="text-left">Pencapaian</th>
                   <th className="text-right">Skor</th>
                   <th className="text-right">Akurasi</th>
-                  <th className="text-center">Sertifikat</th>
+                  <th className="text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -382,21 +404,29 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                   <tr key={p.id} className="border-b border-white/5">
                     <td className="py-3">{i + 1}</td>
                     <td>{p.name} {p.isEliminated && '💀'}</td>
-                    {report.groupMode && (
-                      <td><span className={`text-xs font-bold px-2 py-1 rounded bg-white/10`}>{p.group || '-'}</span></td>
-                    )}
+                    {report.groupMode && (<td><span className={`text-xs font-bold px-2 py-1 rounded bg-white/10`}>{p.group || '-'}</span></td>)}
                     <td><div className="flex gap-1">{p.badges.map((b: any, idx: number) => (<span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>))}{p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}</div></td>
                     <td className="text-right font-mono">{p.score}</td>
                     <td className="text-right">{p.accuracy}%</td>
                     <td className="text-center">
-                      <button
-                        onClick={() => downloadSingleCertificate(p, i + 1)}
-                        disabled={downloadingPlayerId === p.id || isDownloadingAll}
-                        className="p-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition disabled:opacity-50"
-                        title="Unduh Sertifikat"
-                      >
-                        {downloadingPlayerId === p.id ? '⏳' : '📜'}
-                      </button>
+                      <div className="flex gap-1 justify-center">
+                        <button
+                          onClick={() => downloadSingle(p, i + 1, 'report')}
+                          disabled={downloadingPlayerId === p.id || isDownloadingAllReports || isDownloadingAllCerts}
+                          className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition disabled:opacity-50"
+                          title="Unduh Rapor (untuk Orang Tua)"
+                        >
+                          {downloadingPlayerId === p.id && downloadingType === 'report' ? '⏳' : '📄'}
+                        </button>
+                        <button
+                          onClick={() => downloadSingle(p, i + 1, 'cert')}
+                          disabled={downloadingPlayerId === p.id || isDownloadingAllReports || isDownloadingAllCerts}
+                          className="p-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition disabled:opacity-50"
+                          title="Unduh Sertifikat (untuk Siswa)"
+                        >
+                          {downloadingPlayerId === p.id && downloadingType === 'cert' ? '⏳' : '📜'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
