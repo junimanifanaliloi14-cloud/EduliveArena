@@ -292,7 +292,7 @@ export default function HostHome() {
           <button onClick={() => { setShowAi(!showAi); setIsImporting(false); }} className="text-sm font-semibold text-purple-400 hover:text-purple-300">
             {showAi ? 'Tutup AI' : '🤖 Buat Soal AI'}
           </button>
-          <button onClick={() => { setIsImporting(!isImporting); setShowAi(false); }} className="text-sm text-brand-500 hover:text-brand-400 font-semibold">
+          <Link href="/host/history" className="text-sm text-slate-300 hover:text-white font-semibold mr-3">📚 Riwayat</Link><button onClick={() => { setIsImporting(!isImporting); setShowAi(false); }} className="text-sm text-brand-500 hover:text-brand-400 font-semibold">
             {isImporting ? 'Batal Import' : '+ Import Excel'}
           </button>
         </div>
