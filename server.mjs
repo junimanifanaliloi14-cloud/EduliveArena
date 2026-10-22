@@ -26,12 +26,14 @@ io.on('connection', (socket) => {
     } 
   });
 
-  socket.on('player:join', ({ pin, name }, ack) => {
+  socket.on('player:join', ({ pin, name, code }, ack) => {
     try {
       const session = store.getSessionByPin(pin);
       if (!session) return ack?.({ ok: false, error: 'PIN tidak valid' });
       if (session.status === 'ended') return ack?.({ ok: false, error: 'Sesi telah berakhir' });
-      const player = store.joinSession(session.id, name);
+      
+      const player = store.joinSession(session.id, name, code);
+      
       socket.join(`session:${session.id}`);
       socket.join(`player:${player.id}`);
       socket.data.sessionId = session.id;
@@ -39,6 +41,17 @@ io.on('connection', (socket) => {
       io.to(`session:${session.id}`).emit('session:state', store.getPublicState(session.id));
       socket.emit('player:state', store.getPlayerState(session.id, player.id));
       ack?.({ ok: true, player, sessionId: session.id });
+    } catch (e) { ack?.({ ok: false, error: e.message }); }
+  });
+
+  socket.on('player:ready', (ack) => {
+    const { sessionId, playerId } = socket.data;
+    if (!sessionId || !playerId) return ack?.({ ok: false, error: 'Belum join' });
+    try {
+      store.toggleReady(sessionId, playerId);
+      io.to(`session:${sessionId}`).emit('session:state', store.getPublicState(sessionId));
+      socket.emit('player:state', store.getPlayerState(sessionId, playerId));
+      ack?.({ ok: true });
     } catch (e) { ack?.({ ok: false, error: e.message }); }
   });
 
@@ -94,7 +107,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // FITUR BARU: Event Suara dari Guru ke OBS
   socket.on('host:sound', ({ sessionId, soundUrl }) => {
     if (sessionId && soundUrl) {
       io.to(`session:${sessionId}`).emit('overlay:sound', soundUrl);

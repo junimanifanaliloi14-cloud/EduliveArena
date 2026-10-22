@@ -7,12 +7,9 @@ import { QRCodeSVG } from 'qrcode.react';
 
 export default function ControlPanel({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { state, connected } = useSessionSocket(id);
+  const { state, connected, socket } = useSessionSocket(id);
   const [busy, setBusy] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
-
-  // FITUR BARU: Referensi socket untuk mengirim suara
-  const { socket } = useSessionSocket(id); 
 
   async function action(a: 'start' | 'next' | 'reveal' | 'end' | 'pause' | 'resume') {
     setBusy(a);
@@ -56,12 +53,12 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
   function downloadCSV() {
     if (!report) return;
-    const headers = ['Peringkat', 'Nama', 'Tim', 'Skor', 'Jawaban Benar', 'Total Jawaban', 'Akurasi (%)', 'Pencapaian', 'Status'];
+    const headers = ['Peringkat', 'Nama', 'Grup', 'Skor', 'Jawaban Benar', 'Total Jawaban', 'Akurasi (%)', 'Pencapaian', 'Status'];
     const rows = report.players.map((p: any, i: number) => {
       const badgeStr = p.badges.map((b: any) => `${b.icon} ${b.label}`).join(' | ');
-      const teamStr = p.team ? (p.team === 'A' ? 'Merah' : 'Biru') : '-';
+      const groupStr = p.group || '-';
       const statusStr = p.isEliminated ? 'Tereliminasi' : 'Bertahan';
-      return [ i + 1, `"${p.name}"`, `"${teamStr}"`, p.score, p.correct, p.total, p.accuracy, `"${badgeStr}"`, statusStr ].join(',');
+      return [ i + 1, `"${p.name}"`, `"${groupStr}"`, p.score, p.correct, p.total, p.accuracy, `"${badgeStr}"`, statusStr ].join(',');
     });
     const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -78,13 +75,22 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   const playUrl = origin + '/play/' + s.pin;
   const overlayUrl = origin + '/overlay/' + s.id;
 
-  // URL Efek Suara Gratis
   const SFX = {
     drumroll: 'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
     cheer: 'https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3',
     boo: 'https://assets.mixkit.co/active_storage/sfx/2016/2016-preview.mp3',
     ding: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'
   };
+
+  const readyCount = state.allPlayers.filter(p => p.isReady).length;
+
+  // Konfigurasi Warna untuk Grup dinamis
+  const groupColors = [
+    { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400' },
+    { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400' },
+    { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400' },
+    { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400' },
+  ];
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -97,8 +103,8 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
           <div className="flex items-center gap-2 flex-wrap">
             <span className={'h-2.5 w-2.5 rounded-full ' + (connected ? 'bg-emerald-400' : 'bg-red-500')} />
             <span className="text-xs uppercase tracking-wider text-slate-400">{s.status} - {s.questionState} {s.isPaused && '(PAUSED)'}</span>
-            {s.teamMode && <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">Mode Tim</span>}
             {s.eliminationMode && <span className="text-xs bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/30">Mode Eliminasi</span>}
+            {s.tournamentMode && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">🏆 Turnamen</span>}
           </div>
           <h1 className="text-2xl font-bold mt-1">{s.bankName}</h1>
           <p className="text-slate-400 text-sm">{s.hostName} - {state.playerCount} murid</p>
@@ -109,16 +115,17 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
         </div>
       </header>
 
-      {s.teamMode && s.teamScores && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="card border-red-500/30 bg-red-500/5 flex items-center justify-between">
-            <span className="font-bold text-red-400">TIM MERAH</span>
-            <span className="font-mono text-3xl font-bold">{s.teamScores.A}</span>
-          </div>
-          <div className="card border-blue-500/30 bg-blue-500/5 flex items-center justify-between">
-            <span className="font-bold text-blue-400">TIM BIRU</span>
-            <span className="font-mono text-3xl font-bold">{s.teamScores.B}</span>
-          </div>
+      {s.groupMode && s.groupScores && (
+        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${s.groupCount}, minmax(0, 1fr))` }}>
+          {s.groupNames.slice(0, s.groupCount).map((name, i) => {
+            const color = groupColors[i % groupColors.length];
+            return (
+              <div key={name} className={`card ${color.bg} ${color.border} flex flex-col items-center justify-center py-4`}>
+                <span className={`font-bold ${color.text} text-lg uppercase tracking-wider`}>{name}</span>
+                <span className="font-mono text-3xl font-bold mt-1">{s.groupScores[name]}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -139,7 +146,6 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
         </div>
       </div>
 
-      {/* KOTAK SOUNDBOARD */}
       <section className="card">
         <h2 className="font-semibold mb-3 flex items-center gap-2">
           <span>🎵</span> Soundboard Game Show
@@ -156,7 +162,16 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
         <h2 className="font-semibold mb-3">Kontrol Utama</h2>
         <div className="flex flex-wrap gap-2 items-center">
           {s.status === 'lobby' && (
-            <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">{busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}</button>
+            <>
+              <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">
+                {busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}
+              </button>
+              {s.tournamentMode && (
+                <div className="text-sm text-amber-400 font-bold ml-2">
+                  Ready: {readyCount} / {state.allPlayers.length} Peserta
+                </div>
+              )}
+            </>
           )}
           {(s.status === 'live' || s.status === 'lobby') && s.questionState === 'idle' && (
             <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : s.currentQuestionIndex < 0 ? 'Tampilkan Soal 1' : 'Soal Berikutnya ->'}</button>
@@ -199,7 +214,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       <div className="grid md:grid-cols-2 gap-4">
         <section className="card">
           <h2 className="font-semibold mb-3">Leaderboard</h2>
-          <LeaderboardMini rows={state.leaderboard} teamMode={s.teamMode} />
+          <LeaderboardMini rows={state.leaderboard} groupMode={s.groupMode} />
         </section>
 
         <section className="card">
@@ -214,10 +229,11 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                 <div className="flex items-center gap-2">
                   <span className={`h-2 w-2 rounded-full ${p.online ? 'bg-emerald-500' : 'bg-slate-600'}`} />
                   <span className="font-medium text-sm">{p.name}</span>
+                  {p.isReady && <span className="text-xs text-emerald-400 font-bold">✓ Ready</span>}
                   {p.isEliminated && <span title="Tereliminasi">💀</span>}
-                  {s.teamMode && p.team && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.team === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                      {p.team === 'A' ? 'Merah' : 'Biru'}
+                  {s.groupMode && p.group && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase bg-white/10`}>
+                      {p.group}
                     </span>
                   )}
                 </div>
@@ -236,8 +252,12 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
             <div>
               <h2 className="font-semibold text-lg">Laporan Akhir</h2>
               <div className="text-sm text-slate-400">PIN {report.pin} - {report.totalQuestions} soal - {report.players.length} murid</div>
-              {report.teamMode && report.teamScores && (
-                <div className="text-sm mt-1 font-semibold"><span className="text-red-400">Merah: {report.teamScores.A}</span> vs <span className="text-blue-400">Biru: {report.teamScores.B}</span></div>
+              {report.groupMode && report.groupScores && (
+                <div className="text-sm mt-1 flex gap-4 font-semibold">
+                  {Object.entries(report.groupScores).map(([name, score]: any) => (
+                    <span key={name}>{name}: <span className="text-brand-400">{score}</span></span>
+                  ))}
+                </div>
               )}
             </div>
             <button onClick={downloadCSV} className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-sm px-4">⬇️ Download CSV (Excel)</button>
@@ -248,7 +268,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
                   <th className="text-left py-2">#</th><th className="text-left">Nama</th>
-                  {report.teamMode && <th className="text-left">Tim</th>}
+                  {report.groupMode && <th className="text-left">Grup</th>}
                   <th className="text-left">Pencapaian</th><th className="text-right">Skor</th><th className="text-right">Akurasi</th>
                 </tr>
               </thead>
@@ -257,8 +277,8 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                   <tr key={p.id} className="border-b border-white/5">
                     <td className="py-3">{i + 1}</td>
                     <td>{p.name} {p.isEliminated && '💀'}</td>
-                    {report.teamMode && (
-                      <td><span className={`text-xs px-2 py-1 rounded-full ${p.team === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>{p.team === 'A' ? 'Merah' : 'Biru'}</span></td>
+                    {report.groupMode && (
+                      <td><span className={`text-xs font-bold px-2 py-1 rounded bg-white/10`}>{p.group || '-'}</span></td>
                     )}
                     <td><div className="flex gap-1">{p.badges.map((b: any, idx: number) => (<span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>))}{p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}</div></td>
                     <td className="text-right font-mono">{p.score}</td><td className="text-right">{p.accuracy}%</td>
@@ -294,7 +314,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   );
 }
 
-function LeaderboardMini({ rows, teamMode }: { rows: any[], teamMode?: boolean }) {
+function LeaderboardMini({ rows, groupMode }: { rows: any[], groupMode?: boolean }) {
   if (!rows.length) return <div className="text-slate-500 text-sm">Belum ada pemain.</div>;
   return (
     <motion.ol className="flex flex-col gap-1 relative">
@@ -306,7 +326,7 @@ function LeaderboardMini({ rows, teamMode }: { rows: any[], teamMode?: boolean }
               <span className="w-6 text-center font-mono font-bold text-brand-500">{r.rank}</span>
               <span className="font-medium">{r.name}</span>
               {r.isEliminated && <span>💀</span>}
-              {teamMode && <span className={`text-[10px] font-bold ${r.team === 'A' ? 'text-red-400' : 'text-blue-400'}`}>{r.team === 'A' ? 'Merah' : 'Biru'}</span>}
+              {groupMode && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10`}>{r.group}</span>}
               {r.streak >= 2 && <span className="text-xs text-amber-400">🔥{r.streak}</span>}
             </div>
             <span className="font-mono text-slate-300">{r.score}</span>

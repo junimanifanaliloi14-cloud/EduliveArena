@@ -127,9 +127,8 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const third = podiumData[2];
 
   const shouldScroll = allPlayers.length > 5;
-  // Duplikasi list untuk efek scroll tanpa putus
   const scrollData = shouldScroll ? [...allPlayers, ...allPlayers] : allPlayers;
-  const scrollDuration = allPlayers.length * 3; // 3 detik per peserta (makin banyak makin cepat sedikit)
+  const scrollDuration = allPlayers.length * 3;
 
   let avatarAnim = {};
   if (s.isBossBattle) {
@@ -141,6 +140,8 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   } else {
     avatarAnim = { y: [0, -5, 0], transition: { repeat: Infinity, duration: 3, ease: "easeInOut" } }; 
   }
+
+  const readyCount = state.allPlayers.filter((p: any) => p.isReady).length;
 
   return (
     <div className="min-h-screen p-6 bg-transparent relative overflow-hidden">
@@ -178,10 +179,7 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
       </div>
 
       {s.status === 'ended' ? (
-        /* ================= TAMPILAN PODIUM JUARA (LAYOUT SPLIT) ================= */
         <div className="max-w-7xl mx-auto h-[85vh] grid grid-cols-3 gap-8 relative z-10 animate-pop">
-          
-          {/* KOLOM KIRI: PODIUM */}
           <div className="col-span-2 flex flex-col justify-end pb-10">
             <div className="text-center mb-12">
               <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-300 uppercase tracking-widest drop-shadow-[0_0_20px_rgba(245,158,11,0.5)]">
@@ -191,7 +189,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
             </div>
 
             <div className="flex justify-center items-end gap-4 h-64">
-              {/* JUARA 2 */}
               {second && (
                 <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5, type: 'spring' }} className="w-48 flex flex-col items-center">
                   <div className="text-6xl mb-2">🥈</div>
@@ -201,7 +198,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                 </motion.div>
               )}
 
-              {/* JUARA 1 */}
               {first && (
                 <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2, type: 'spring' }} className="w-56 flex flex-col items-center z-10 relative">
                   <div className="absolute -top-16 text-7xl animate-bounce">👑</div>
@@ -214,7 +210,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                 </motion.div>
               )}
 
-              {/* JUARA 3 */}
               {third && (
                 <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.8, type: 'spring' }} className="w-48 flex flex-col items-center">
                   <div className="text-6xl mb-2">🥉</div>
@@ -226,24 +221,20 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
             </div>
           </div>
 
-          {/* KOLOM KANAN: DAFTAR SEMUA PESERTA BERGULIR */}
           <div className="col-span-1 h-full flex flex-col justify-center py-8">
             <div className="card bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl flex flex-col h-[65vh] overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
               <div className="text-center py-3 border-b border-white/10 bg-white/5 text-sm font-bold uppercase tracking-widest text-slate-300 flex-shrink-0">
                 Klasemen Lengkap
               </div>
               <div className="flex-1 relative overflow-hidden p-2">
-                {/* Efek Gradient atas dan bawah agar menyatu */}
                 <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none" />
                 <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-black/80 to-transparent z-10 pointer-events-none" />
                 
-                {/* Kontainer Gulir */}
                 <div 
                   className={`flex flex-col gap-1 ${shouldScroll ? 'animate-scroll-slow hover:[animation-play-state:paused]' : ''}`}
                   style={{ animationDuration: `${scrollDuration}s` }}
                 >
                   {scrollData.map((p: any, i: number) => {
-                    // Menentukan warna berdasarkan peringkat asli (modulo panjang array asli)
                     const actualRank = (i % allPlayers.length) + 1;
                     let bgClass = "bg-white/5";
                     let textClass = "text-slate-300";
@@ -266,15 +257,16 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
               </div>
             </div>
           </div>
-
         </div>
       ) : isLobby ? (
-        /* ================= TAMPILAN LOBBY ================= */
         <div className="max-w-6xl mx-auto grid grid-cols-3 gap-8 relative z-10 items-center min-h-[80vh] animate-pop">
           <div className="col-span-2 flex flex-col justify-center">
-            <div className="text-brand-500 font-bold tracking-widest uppercase text-sm mb-2">Live Quiz Session</div>
+            <div className="text-brand-500 font-bold tracking-widest uppercase text-sm mb-2">{s.tournamentMode ? '🏆 TOURNAMENT MATCH' : 'Live Quiz Session'}</div>
             <h1 className="text-6xl font-black leading-tight mb-4">{s.bankName}</h1>
-            <p className="text-2xl text-slate-300 mb-8">Bersama: <span className="text-white font-semibold">{s.hostName}</span></p>
+            <p className="text-2xl text-slate-300 mb-8">
+              Bersama: <span className="text-white font-semibold">{s.hostName}</span>
+              {s.tournamentMode && <span className="block text-amber-400 font-bold mt-2">Peserta: {state.playerCount} / {s.expectedPlayers}</span>}
+            </p>
             
             <div className="flex items-center gap-6">
               <div className="card bg-white/10 border-white/20 p-4 rounded-2xl flex flex-col items-center">
@@ -283,6 +275,18 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
               </div>
               <div className="text-slate-400 text-sm">atau scan QR Code di samping →</div>
             </div>
+
+            {s.tournamentMode && (
+              <div className="mt-6 bg-slate-800/50 p-4 rounded-xl border border-white/10">
+                <div className="text-sm text-slate-300 mb-2 flex justify-between">
+                  <span>Peserta Siap:</span>
+                  <span className="font-bold text-emerald-400">{readyCount} / {state.allPlayers.length}</span>
+                </div>
+                <div className="h-3 w-full bg-slate-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${state.allPlayers.length > 0 ? (readyCount / state.allPlayers.length) * 100 : 0}%` }} />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="col-span-1 flex flex-col items-center">
@@ -300,9 +304,9 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                       key={p.id} 
                       initial={{ opacity: 0, scale: 0.5 }} 
                       animate={{ opacity: 1, scale: 1 }}
-                      className="bg-white/10 px-3 py-1.5 rounded-full text-sm font-medium animate-pop"
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 ${p.isReady ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50' : 'bg-white/10 text-slate-400'}`}
                     >
-                      {p.name}
+                      {p.name} {p.isReady && '✓'}
                     </motion.div>
                   ))}
                 </AnimatePresence>
@@ -311,7 +315,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
           </div>
         </div>
       ) : (
-        /* ================= TAMPILAN KUIS UTAMA ================= */
         <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
           <div className="col-span-2 card min-h-[380px] flex flex-row relative overflow-hidden">
             
@@ -326,11 +329,18 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
             </div>
 
             <div className="flex-1 flex flex-col">
-              {s.teamMode && s.teamScores && (
-                <div className="flex gap-4 mb-4 bg-slate-800/80 p-3 rounded-xl border border-white/10 shadow-lg animate-slide-up">
-                  <div className="flex-1 bg-red-500/20 border border-red-500/30 rounded-lg p-2 flex items-center justify-between"><span className="font-bold text-red-400 text-lg">TIM MERAH</span><span className="font-mono text-2xl font-bold text-white">{s.teamScores.A}</span></div>
-                  <div className="flex items-center text-slate-500 font-bold italic">VS</div>
-                  <div className="flex-1 bg-blue-500/20 border border-blue-500/30 rounded-lg p-2 flex items-center justify-between"><span className="font-bold text-blue-400 text-lg">TIM BIRU</span><span className="font-mono text-2xl font-bold text-white">{s.teamScores.B}</span></div>
+              {/* PAPAN SKOR GRUP DINAMIS */}
+              {s.groupMode && s.groupScores && (
+                <div className="flex gap-2 mb-4 bg-slate-800/80 p-2 rounded-xl border border-white/10 shadow-lg animate-slide-up flex-wrap">
+                  {s.groupNames.slice(0, s.groupCount).map((name, i) => {
+                    const colors = ['text-red-400 bg-red-500/20 border-red-500/30', 'text-blue-400 bg-blue-500/20 border-blue-500/30', 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30', 'text-amber-400 bg-amber-500/20 border-amber-500/30'];
+                    return (
+                      <div key={name} className={`flex-1 min-w-[100px] border rounded-lg p-2 flex flex-col items-center ${colors[i % colors.length]}`}>
+                        <span className="font-bold text-xs uppercase">{name}</span>
+                        <span className="font-mono text-xl font-bold text-white">{s.groupScores[name]}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -435,7 +445,7 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                       <span className="w-5 text-center font-mono font-bold text-brand-500">{r.rank}</span>
                       <span className="font-medium">{r.name}</span>
                       {r.isEliminated && <span title="Tereliminasi">💀</span>}
-                      {s.teamMode && <span className={`text-[10px] font-bold ${r.team === 'A' ? 'text-red-400' : 'text-blue-400'}`}>{r.team === 'A' ? 'M' : 'B'}</span>}
+                      {s.groupMode && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10`}>{r.group}</span>}
                       {r.rank === 1 && !r.isEliminated && <span className="text-amber-400">👑</span>}
                     </span>
                     <span className="font-mono text-slate-200">{r.score}</span>

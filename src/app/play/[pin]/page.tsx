@@ -5,12 +5,17 @@ import type { PublicState } from '@/lib/types';
 import { initAudio, playCorrect, playWrong, playTick } from '@/lib/sound';
 import confetti from 'canvas-confetti';
 import { getOptimizedImageUrl } from '@/lib/imageHelper';
+import { useSearchParams } from 'next/navigation';
 
 export default function PlayPage({ params }: { params: Promise<{ pin: string }> }) {
   const { pin } = use(params);
+  const searchParams = useSearchParams();
+  
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [agreedToRules, setAgreedToRules] = useState(false);
   const [joined, setJoined] = useState(false);
   const [kicked, setKicked] = useState(false);
   const [error, setError] = useState('');
@@ -29,6 +34,13 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [timeOffset, setTimeOffset] = useState(0);
   const lastPlayedStateRef = useRef<string>('');
   const lastTickedRef = useRef<number>(-1);
+
+  useEffect(() => {
+    const urlName = searchParams.get('name');
+    const urlCode = searchParams.get('code');
+    if (urlName) setName(urlName);
+    if (urlCode) setInviteCode(urlCode);
+  }, [searchParams]);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 100); return () => clearInterval(t); }, []);
 
@@ -122,13 +134,25 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
 
   async function join() {
     if (!name.trim() || !socketRef.current) return;
+    if (state?.session.tournamentMode && !inviteCode.trim()) {
+      setError('Kode Undangan wajib diisi untuk turnamen!'); return;
+    }
+    if (state?.session.tournamentMode && !agreedToRules) {
+      setError('Anda harus menyetujui peraturan turnamen!'); return;
+    }
+    
     initAudio(); setError('');
-    socketRef.current.emit('player:join', { pin, name }, (res: any) => {
+    socketRef.current.emit('player:join', { pin, name, code: inviteCode }, (res: any) => {
       if (res?.ok) { 
         setJoined(true); setMyPlayer(res.player); 
         sessionStorage.setItem('edulive_session', res.sessionId); sessionStorage.setItem('edulive_player', res.player.id);
       } else setError(res?.error || 'Gagal join');
     });
+  }
+
+  function toggleReady() {
+    if (!socketRef.current) return;
+    socketRef.current.emit('player:ready');
   }
 
   function answer(choice: number) {
@@ -163,7 +187,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
         <div className="w-full max-w-sm card border-red-500/50 text-center animate-pop">
           <div className="text-6xl">🚫</div>
           <h1 className="text-2xl font-bold text-red-400 mt-4">Anda Dikeluarkan</h1>
-          <p className="text-slate-300 text-sm mt-2">Guru telah mengeluarkan Anda dari sesi kuis ini.</p>
           <button onClick={() => window.location.reload()} className="btn-ghost w-full mt-6">Kembali ke Awal</button>
         </div>
       </main>
@@ -175,11 +198,68 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
       <main className="min-h-screen grid place-items-center px-6">
         <div className="w-full max-w-sm card">
           <div className="text-center text-5xl">🎮</div>
-          <h1 className="text-2xl font-bold text-center mt-3">Masuk Kuis</h1>
+          <h1 className="text-2xl font-bold text-center mt-3">
+            {state?.session.tournamentMode ? 'Turnamen Resmi' : 'Masuk Kuis'}
+          </h1>
           <p className="text-center text-slate-400 text-sm mt-1">PIN <span className="font-mono text-brand-500">{pin}</span></p>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama kamu" maxLength={24} className="mt-5 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-brand-500" />
+          
+          {state?.session.tournamentMode ? (
+            <div className="mt-5 space-y-3">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl text-xs text-amber-200">
+                <b>Peraturan Turnamen:</b><br/>
+                1. Dilarang menyontek atau mencari jawaban di Google.<br/>
+                2. Jawab dengan jujur dan sportif.<br/>
+                3. Peserta yang melanggar akan didiskualifikasi.
+              </div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={agreedToRules} onChange={e => setAgreedToRules(e.target.checked)} className="mt-1 h-4 w-4 rounded bg-slate-800 border-white/20 text-amber-500 cursor-pointer" />
+                <span className="text-sm text-slate-300">Saya setuju dan siap bertanding dengan jujur.</span>
+              </label>
+            </div>
+          ) : null}
+
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Nama kamu" maxLength={24} disabled={!!searchParams.get('name')}
+            className="mt-5 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-brand-500 disabled:opacity-50" />
+          
+          {state?.session.tournamentMode && !searchParams.get('code') && (
+            <input value={inviteCode} onChange={e => setInviteCode(e.target.value)} placeholder="Kode Undangan (Cth: BUDI-A1B2)" 
+              className="mt-3 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none focus:border-amber-500 text-center font-mono" />
+          )}
+
           {error && <div className="text-red-400 text-sm mt-2">{error}</div>}
-          <button onClick={join} disabled={!connected} className="btn-primary w-full mt-4 disabled:opacity-50">{connected ? 'Masuk →' : 'Menghubungkan...'}</button>
+          
+          <button onClick={join} disabled={!connected || (state?.session.tournamentMode && !agreedToRules)} className="btn-primary w-full mt-4 disabled:opacity-50">
+            {connected ? (state?.session.tournamentMode ? 'Masuk Arena Turnamen →' : 'Masuk →') : 'Menghubungkan...'}
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (state?.session.status === 'lobby' && state?.session.tournamentMode) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center px-6">
+        <div className="w-full max-w-sm card text-center animate-pop border-amber-500/30">
+          <div className="text-6xl mb-4">{myPlayer?.isReady ? '✅' : '⏳'}</div>
+          <h2 className="text-2xl font-bold text-white mb-2">
+            {myPlayer?.isReady ? 'Anda Siap!' : 'Bersiap-siap...'}
+          </h2>
+          <p className="text-slate-400 text-sm mb-6">
+            {myPlayer?.isReady 
+              ? 'Menunggu peserta lain dan instruksi dari guru.' 
+              : 'Tekan tombol di bawah jika Anda sudah siap bertanding.'}
+          </p>
+
+          <button 
+            onClick={toggleReady}
+            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
+              myPlayer?.isReady 
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30' 
+                : 'bg-amber-500 text-white shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:bg-amber-600 animate-pulse'
+            }`}
+          >
+            {myPlayer?.isReady ? 'Batalkan Siap' : 'SAYA SIAP! 👊'}
+          </button>
         </div>
       </main>
     );
@@ -189,10 +269,11 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const isShowing = state?.session.questionState === 'showing' && q;
   
   const myFinalData = finalReport?.players?.find((p: any) => p.id === myPlayer?.id);
-  const myTeam = myPlayer?.team;
-  const isTeamMode = state?.session.teamMode;
+  const myGroup = myPlayer?.group;
+  const isGroupMode = state?.session.groupMode;
   const isEliminated = myPlayer?.isEliminated;
   const isBossBattle = state?.session.isBossBattle;
+  const isTournament = state?.session.tournamentMode;
 
   if (isEliminated && state?.session.status !== 'ended') {
     return (
@@ -202,19 +283,17 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <h2 className="text-2xl font-bold text-red-400">Anda Tereliminasi</h2>
           <p className="text-slate-300 text-sm mt-2">Sayang sekali, Anda menjawab salah atau kehabisan waktu.</p>
         </div>
-        
         <div className="card mt-4 w-full">
           <div className="text-xs uppercase text-slate-400 mb-2">Top 5</div>
           <ol className="space-y-1">
             {state.leaderboard.slice(0, 5).map(r => (
               <li key={r.id} className={`flex justify-between text-sm px-2 py-1.5 rounded ${r.id === myPlayer?.id ? 'bg-brand-500/15' : ''}`}>
-                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name}</span>
+                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name} {isGroupMode && <span className="text-[10px] text-slate-500">({r.group})</span>}</span>
                 <span className="font-mono">{r.score}</span>
               </li>
             ))}
           </ol>
         </div>
-
         <div className="fixed bottom-0 left-0 right-0 p-3 bg-slate-900/90 backdrop-blur border-t border-white/10 flex justify-center gap-4 z-50">
           {['👏', '😂', '😮', '🔥', '💯'].map(emoji => (
             <button key={emoji} onClick={() => sendEmoji(emoji)} className="text-3xl hover:scale-125 transition-transform active:scale-90">{emoji}</button>
@@ -228,11 +307,13 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     <main className="min-h-screen px-4 py-6 max-w-md mx-auto relative pb-24">
       <header className="flex items-center justify-between mb-4">
         <div>
-          <div className="text-xs text-slate-400">Halo,</div>
+          <div className="text-xs text-slate-400">
+            {isTournament ? <span className="text-amber-400 font-bold">🏆 TURNAMEN</span> : 'Halo,'}
+          </div>
           <div className="font-semibold flex items-center gap-2">
             {myPlayer?.name}
-            {isTeamMode && myTeam && (
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${myTeam === 'A' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>Tim {myTeam === 'A' ? 'Merah' : 'Biru'}</span>
+            {isGroupMode && myGroup && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-white/10 text-white`}>{myGroup}</span>
             )}
           </div>
         </div>
@@ -301,7 +382,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             
             <h2 className="text-lg font-semibold mt-2">{q.text}</h2>
             
-            {/* GAMBAR SOAL DI MURID DENGAN AUTO-RESIZE & ERROR FALLBACK */}
             {q.imageUrl && (
               <div className="mt-4 rounded-xl overflow-hidden border border-white/10 flex flex-col items-center justify-center bg-black/20 p-2 min-h-[100px] relative">
                 {imgLoading && !imgError && (
@@ -312,7 +392,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
                 {imgError ? (
                   <div className="text-slate-500 text-sm text-center py-4">
                     <span className="text-2xl block mb-1">🖼️</span>
-                    Gambar gagal dimuat. Pastikan link adalah <b>Direct link</b> (bukan link halaman web) dan file Google Drive sudah diatur ke <b>"Anyone with the link"</b>. 
+                    Gambar gagal dimuat. Pastikan link adalah <b>Direct Link</b>.
                   </div>
                 ) : (
                   <img 
@@ -372,6 +452,20 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             {myAnswer?.correct ? (<span className="text-emerald-400">✓ Benar! +{myAnswer.points} poin</span>) : myAnswer ? (<span className="text-red-400">✗ Belum tepat</span>) : (<span className="text-slate-400">Tidak menjawab</span>)}
           </div>
           {myPlayer && myPlayer.streak >= 2 && (<div className="mt-2 text-amber-400 text-sm">🔥 Streak {myPlayer.streak}</div>)}
+        </div>
+      )}
+
+      {state && state.leaderboard.length > 0 && state.session.status !== 'ended' && (
+        <div className="card mt-4">
+          <div className="text-xs uppercase text-slate-400 mb-2">Top 5</div>
+          <ol className="space-y-1">
+            {state.leaderboard.slice(0, 5).map(r => (
+              <li key={r.id} className={`flex justify-between text-sm px-2 py-1.5 rounded ${r.id === myPlayer?.id ? 'bg-brand-500/15' : ''}`}>
+                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name} {isGroupMode && <span className="text-[10px] text-slate-500">({r.group})</span>}</span>
+                <span className="font-mono">{r.score}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 
