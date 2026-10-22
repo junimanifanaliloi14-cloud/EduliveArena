@@ -35,6 +35,15 @@ export default function HostHome() {
   const [namesInput, setNamesInput] = useState('');
   const [generatedCodes, setGeneratedCodes] = useState<{name: string, code: string}[]>([]);
 
+  // State AI Generator
+  const [showAi, setShowAi] = useState(false);
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiMaterial, setAiMaterial] = useState('');
+  const [aiNumQuestions, setAiNumQuestions] = useState(5);
+  const [aiDifficulty, setAiDifficulty] = useState('Sedang');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiGenerated, setAiGenerated] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -61,6 +70,9 @@ export default function HostHome() {
         if (parsed.tournamentMode !== undefined) setTournamentMode(parsed.tournamentMode);
       } catch (e) { console.error(e); }
     }
+    const savedAiKey = localStorage.getItem('edulive_ai_key');
+    if (savedAiKey) setAiApiKey(savedAiKey);
+    
     fetchBanks();
   }, []);
 
@@ -68,6 +80,10 @@ export default function HostHome() {
     const settings = { hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode };
     localStorage.setItem('edulive_teacher_settings', JSON.stringify(settings));
   }, [hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode]);
+
+  useEffect(() => {
+    if (aiApiKey) localStorage.setItem('edulive_ai_key', aiApiKey);
+  }, [aiApiKey]);
 
   function fetchBanks() {
     fetch('/api/banks').then(r => r.json()).then(d => {
@@ -78,10 +94,103 @@ export default function HostHome() {
     });
   }
 
+  async function generateWithAI() {
+    if (!aiApiKey.trim()) { alert('Masukkan API Key Gemini terlebih dahulu. Kunjungi aistudio.google.com/app/apikey untuk mendapatkannya gratis.'); return; }
+    if (!aiMaterial.trim()) { alert('Masukkan materi pelajaran (teks) terlebih dahulu.'); return; }
+    
+    setAiGenerating(true);
+    setAiGenerated([]);
+    try {
+      const prompt = `Anda adalah guru ahli. Buatkan ${aiNumQuestions} soal pilihan ganda berkualitas tentang materi berikut:
+
+"${aiMaterial}"
+
+Aturan:
+- Setiap soal memiliki tepat 4 pilihan jawaban (A, B, C, D)
+- Hanya ada 1 jawaban benar per soal
+- Tingkat kesulitan: ${aiDifficulty}
+- Gunakan Bahasa Indonesia yang baik dan benar
+- Setiap soal waktu menjawab 20 detik
+- Kembalikan HANYA JSON array valid, tanpa markdown, tanpa penjelasan tambahan
+
+Format JSON yang diharapkan:
+[
+  {
+    "text": "Pertanyaan soal...",
+    "options": ["Opsi A", "Opsi B", "Opsi C", "Opsi D"],
+    "correctIndex": 0,
+    "timeLimitSec": 20
+  }
+]`;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${aiApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { 
+            responseMimeType: "application/json",
+            temperature: 0.7
+          }
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'Gagal memanggil AI. Cek API Key Anda.');
+      }
+
+      const data = await res.json();
+      const text = data.candidates[0].content.parts[0].text;
+      const parsed = JSON.parse(text);
+      
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error('Format respon AI tidak valid. Coba lagi.');
+      }
+
+      const formatted = parsed.map((q: any, i: number) => ({
+        id: `ai_q_${Date.now()}_${i}`,
+        text: q.text || 'Soal tanpa teks',
+        options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['-', '-', '-', '-'],
+        correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
+        timeLimitSec: q.timeLimitSec || 20,
+        imageUrl: null
+      }));
+
+      setAiGenerated(formatted);
+    } catch (e: any) {
+      alert('Error: ' + e.message);
+    }
+    setAiGenerating(false);
+  }
+
+  async function saveAIGenerated() {
+    if (aiGenerated.length === 0) return;
+    setLoading(true);
+    const res = await fetch('/api/banks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        name: 'AI: ' + (aiMaterial.slice(0, 40) || 'Bank Baru'),
+        subject: 'Umum',
+        questions: aiGenerated 
+      }),
+    });
+    if (res.ok) {
+      setShowAi(false);
+      setAiGenerated([]);
+      setAiMaterial('');
+      fetchBanks();
+      alert('Bank soal AI berhasil disimpan!');
+    } else {
+      alert('Gagal menyimpan bank soal AI.');
+    }
+    setLoading(false);
+  }
+
   function generateCodes() {
     const names = namesInput.split('\n').map(n => n.trim()).filter(n => n);
     if (names.length === 0) { alert('Masukkan minimal 1 nama.'); return; }
-    
     const codes = names.map(name => {
       const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
       return { name, code: `${name.split(' ')[0].toUpperCase()}-${randomStr}` };
@@ -211,13 +320,103 @@ export default function HostHome() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <div className="mb-6 flex justify-between items-center">
         <Link href="/" className="text-sm text-slate-400 hover:text-white transition">← Kembali ke Beranda</Link>
-        <button onClick={() => setIsImporting(!isImporting)} className="text-sm text-brand-500 hover:text-brand-400 font-semibold">
-          {isImporting ? 'Batal Import' : '+ Import Soal'}
-        </button>
+        <div className="flex gap-3">
+          <button onClick={() => { setShowAi(!showAi); setIsImporting(false); }} className="text-sm font-semibold text-purple-400 hover:text-purple-300">
+            {showAi ? 'Tutup AI' : '🤖 Buat Soal AI'}
+          </button>
+          <button onClick={() => { setIsImporting(!isImporting); setShowAi(false); }} className="text-sm text-brand-500 hover:text-brand-400 font-semibold">
+            {isImporting ? 'Batal Import' : '+ Import Excel'}
+          </button>
+        </div>
       </div>
 
       <h1 className="text-3xl font-bold">Dashboard Guru</h1>
       <p className="text-slate-400 mt-1">Pilih bank soal dan atur durasi kuis live.</p>
+
+      {/* SECTION: AI GENERATOR */}
+      {showAi && (
+        <div className="card mt-6 border-purple-500/50 bg-purple-500/5 animate-slide-up">
+          <h2 className="font-semibold text-lg mb-2 text-purple-400">🤖 Buat Soal Otomatis dengan AI</h2>
+          <p className="text-xs text-slate-400 mb-4">
+            Tempelkan materi pelajaran Anda, biarkan AI membuatkan soal pilihan ganda secara otomatis. 
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-purple-300 underline ml-1">Dapatkan API Key Gemini gratis di sini</a>.
+          </p>
+          
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">API Key Gemini (hanya tersimpan di browser Anda)</label>
+              <input 
+                type="password"
+                value={aiApiKey} 
+                onChange={e => setAiApiKey(e.target.value)} 
+                placeholder="AIzaSy..." 
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm font-mono" 
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Materi / Topik Pelajaran</label>
+              <textarea 
+                value={aiMaterial} 
+                onChange={e => setAiMaterial(e.target.value)}
+                placeholder="Contoh: Fotosintesis adalah proses tumbuhan hijau mengubah energi cahaya matahari menjadi energi kimia dalam bentuk glukosa. Proses ini terjadi di kloroplas dan memerlukan air, karbon dioksida, dan cahaya matahari. Hasil sampingannya adalah oksigen."
+                className="w-full h-24 rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Jumlah Soal</label>
+                <select value={aiNumQuestions} onChange={e => setAiNumQuestions(Number(e.target.value))} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm">
+                  <option value={3} className="bg-slate-800">3 Soal</option>
+                  <option value={5} className="bg-slate-800">5 Soal</option>
+                  <option value={10} className="bg-slate-800">10 Soal</option>
+                  <option value={15} className="bg-slate-800">15 Soal</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Tingkat Kesulitan</label>
+                <select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-purple-500 text-sm">
+                  <option value="Mudah" className="bg-slate-800">Mudah (SD)</option>
+                  <option value="Sedang" className="bg-slate-800">Sedang (SMP)</option>
+                  <option value="Sulit" className="bg-slate-800">Sulit (SMA)</option>
+                </select>
+              </div>
+            </div>
+
+            <button 
+              onClick={generateWithAI} 
+              disabled={aiGenerating} 
+              className="btn-primary w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+            >
+              {aiGenerating ? '✨ AI sedang berpikir...' : '✨ Generate Soal dengan AI'}
+            </button>
+
+            {aiGenerated.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-white/10">
+                <div className="text-sm text-emerald-400 mb-3">✓ {aiGenerated.length} soal berhasil dibuat! Preview:</div>
+                <div className="max-h-64 overflow-y-auto space-y-2 mb-3">
+                  {aiGenerated.map((q, i) => (
+                    <div key={q.id} className="bg-white/5 p-3 rounded-lg text-sm">
+                      <div className="font-medium mb-1">{i + 1}. {q.text}</div>
+                      <div className="grid grid-cols-2 gap-1 text-xs">
+                        {q.options.map((o: string, idx: number) => (
+                          <div key={idx} className={idx === q.correctIndex ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                            {String.fromCharCode(65 + idx)}. {o}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={saveAIGenerated} disabled={loading} className="btn-primary w-full bg-emerald-600 hover:bg-emerald-700">
+                  {loading ? 'Menyimpan...' : `💾 Simpan ${aiGenerated.length} Soal ke Bank`}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {isImporting && (
         <div className="card mt-6 border-brand-500/50 bg-brand-500/5 animate-slide-up">
@@ -248,7 +447,7 @@ export default function HostHome() {
               <input value={hostName} onChange={e => setHostName(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 outline-none focus:border-brand-500" />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-2">URL Logo Sekolah/Komunitas (Opsional)</label>
+              <label className="block text-sm text-slate-400 mb-2">URL Logo Sekolah (Opsional)</label>
               <input value={hostLogo} onChange={e => setHostLogo(e.target.value)} placeholder="https://..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 outline-none focus:border-brand-500 text-sm" />
             </div>
           </div>
@@ -292,7 +491,6 @@ export default function HostHome() {
           </div>
         </div>
 
-        {/* MODE GRUP */}
         <div className="border-t border-white/10 pt-4">
           <label className="flex items-center gap-3 cursor-pointer mb-2">
             <input type="checkbox" checked={groupMode} onChange={e => setGroupMode(e.target.checked)} className="h-5 w-5 rounded bg-emerald-500/20 border-emerald-500/50 text-emerald-500 focus:ring-emerald-500 cursor-pointer" />
@@ -321,7 +519,6 @@ export default function HostHome() {
           )}
         </div>
 
-        {/* MODE TURNAMEN */}
         <div className="border-t border-white/10 pt-4">
           <label className="flex items-center gap-3 cursor-pointer mb-2">
             <input type="checkbox" checked={tournamentMode} onChange={e => setTournamentMode(e.target.checked)} className="h-5 w-5 rounded bg-amber-500/20 border-amber-500/50 text-amber-500 focus:ring-amber-500 cursor-pointer" />
