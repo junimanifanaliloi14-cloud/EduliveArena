@@ -1,15 +1,26 @@
 'use client';
 import { useSessionSocket } from '@/lib/useSocket';
-import { use, useState } from 'react';
+import { use, useState, useRef } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
+import { toPng } from 'html-to-image';
+import JSZip from 'jszip';
+import { Certificate } from '@/components/Certificate';
 
 export default function ControlPanel({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { state, connected, socket } = useSessionSocket(id);
   const [busy, setBusy] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
+
+  // State Sertifikat
+  const certRef = useRef<HTMLDivElement>(null);
+  const [currentCertPlayer, setCurrentCertPlayer] = useState<any>(null);
+  const [currentCertRank, setCurrentCertRank] = useState(1);
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+  const [certProgress, setCertProgress] = useState(0);
+  const [downloadingPlayerId, setDownloadingPlayerId] = useState<string | null>(null);
 
   async function action(a: 'start' | 'next' | 'reveal' | 'end' | 'pause' | 'resume') {
     setBusy(a);
@@ -23,6 +34,72 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       setReport(r.report);
     }
     setBusy(null);
+  }
+
+  // ================= FUNGSI SERTIFIKAT =================
+  async function captureCertificate(): Promise<string> {
+    if (!certRef.current) throw new Error('Certificate ref belum siap');
+    return await toPng(certRef.current, { cacheBust: true, pixelRatio: 2, skipFonts: true });
+  }
+
+  async function downloadSingleCertificate(player: any, rank: number) {
+    if (!state) return;
+    setDownloadingPlayerId(player.id);
+    setCurrentCertPlayer(player);
+    setCurrentCertRank(rank);
+    
+    try {
+      // Beri waktu React untuk render Certificate dengan data baru
+      await new Promise(r => setTimeout(r, 300));
+      const dataUrl = await captureCertificate();
+      const link = document.createElement('a');
+      link.download = `Sertifikat_${rank}_${player.name.replace(/\s+/g, '_')}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (e) {
+      alert('Gagal mengunduh sertifikat: ' + (e as Error).message);
+    }
+    setDownloadingPlayerId(null);
+  }
+
+  async function downloadAllCertificates() {
+    if (!report || !state) return;
+    setIsDownloadingAll(true);
+    setCertProgress(0);
+    
+    const zip = new JSZip();
+    const total = report.players.length;
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const player = report.players[i];
+        setCurrentCertPlayer(player);
+        setCurrentCertRank(i + 1);
+        
+        // Beri waktu React untuk render
+        await new Promise(r => setTimeout(r, 350));
+        
+        const dataUrl = await captureCertificate();
+        const base64 = dataUrl.split(',')[1];
+        const rankPad = String(i + 1).padStart(2, '0');
+        zip.file(`Sertifikat_${rankPad}_${player.name.replace(/\s+/g, '_')}.png`, base64, { base64: true });
+        
+        setCertProgress(i + 1);
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const safeName = report.bankName.replace(/\s+/g, '_');
+      link.download = `Sertifikat_${safeName}_PIN_${report.pin}.zip`;
+      link.click();
+    } catch (e) {
+      alert('Gagal membuat ZIP: ' + (e as Error).message);
+    }
+    
+    setIsDownloadingAll(false);
+    setCurrentCertPlayer(null);
+    setCertProgress(0);
   }
 
   function playSound(url: string) {
@@ -84,7 +161,6 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
   const readyCount = state.allPlayers.filter(p => p.isReady).length;
 
-  // Konfigurasi Warna untuk Grup dinamis
   const groupColors = [
     { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400' },
     { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400' },
@@ -94,6 +170,24 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8 space-y-6">
+      {/* SERTIFIKAT TERSEMBUNYI (RENDER OFF-SCREEN) */}
+      <div style={{ position: 'fixed', top: '-9999px', left: '-9999px' }}>
+        {currentCertPlayer && report && state && (
+          <Certificate
+            ref={certRef}
+            playerName={currentCertPlayer.name}
+            score={currentCertPlayer.score}
+            rank={currentCertRank}
+            totalPlayers={report.players.length}
+            bankName={report.bankName}
+            hostName={s.hostName}
+            hostAvatar={s.hostAvatar}
+            hostLogo={s.hostLogo}
+            date={new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+          />
+        )}
+      </div>
+
       <div>
         <Link href="/host" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition"><span>←</span> Kembali ke Dashboard</Link>
       </div>
@@ -229,12 +323,10 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                 <div className="flex items-center gap-2">
                   <span className={`h-2 w-2 rounded-full ${p.online ? 'bg-emerald-500' : 'bg-slate-600'}`} />
                   <span className="font-medium text-sm">{p.name}</span>
-                  {p.isReady && <span className="text-xs text-emerald-400 font-bold">✓ Ready</span>}
+                  {p.isReady && <span className="text-xs text-emerald-400 font-bold">✓</span>}
                   {p.isEliminated && <span title="Tereliminasi">💀</span>}
                   {s.groupMode && p.group && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase bg-white/10`}>
-                      {p.group}
-                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase bg-white/10`}>{p.group}</span>
                   )}
                 </div>
                 <button onClick={() => kickPlayer(p.id, p.name)} disabled={busy === 'kick_' + p.id} className="p-1.5 rounded-md hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition">
@@ -260,16 +352,29 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                 </div>
               )}
             </div>
-            <button onClick={downloadCSV} className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-sm px-4">⬇️ Download CSV (Excel)</button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={downloadCSV} className="btn-primary bg-slate-600 hover:bg-slate-700 text-sm px-3">⬇️ CSV</button>
+              <button 
+                onClick={downloadAllCertificates} 
+                disabled={isDownloadingAll}
+                className="btn-primary bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-sm px-3 disabled:opacity-50"
+              >
+                {isDownloadingAll ? `📜 ${certProgress}/${report.players.length}...` : '📜 Unduh Semua Sertifikat (ZIP)'}
+              </button>
+            </div>
           </div>
           
           <div className="overflow-x-auto mb-8">
             <table className="w-full text-sm">
               <thead className="text-slate-400 border-b border-white/10">
                 <tr>
-                  <th className="text-left py-2">#</th><th className="text-left">Nama</th>
+                  <th className="text-left py-2">#</th>
+                  <th className="text-left">Nama</th>
                   {report.groupMode && <th className="text-left">Grup</th>}
-                  <th className="text-left">Pencapaian</th><th className="text-right">Skor</th><th className="text-right">Akurasi</th>
+                  <th className="text-left">Pencapaian</th>
+                  <th className="text-right">Skor</th>
+                  <th className="text-right">Akurasi</th>
+                  <th className="text-center">Sertifikat</th>
                 </tr>
               </thead>
               <tbody>
@@ -281,7 +386,18 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                       <td><span className={`text-xs font-bold px-2 py-1 rounded bg-white/10`}>{p.group || '-'}</span></td>
                     )}
                     <td><div className="flex gap-1">{p.badges.map((b: any, idx: number) => (<span key={idx} title={b.label} className="cursor-help text-lg">{b.icon}</span>))}{p.badges.length === 0 && <span className="text-slate-600 text-xs italic">-</span>}</div></td>
-                    <td className="text-right font-mono">{p.score}</td><td className="text-right">{p.accuracy}%</td>
+                    <td className="text-right font-mono">{p.score}</td>
+                    <td className="text-right">{p.accuracy}%</td>
+                    <td className="text-center">
+                      <button
+                        onClick={() => downloadSingleCertificate(p, i + 1)}
+                        disabled={downloadingPlayerId === p.id || isDownloadingAll}
+                        className="p-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition disabled:opacity-50"
+                        title="Unduh Sertifikat"
+                      >
+                        {downloadingPlayerId === p.id ? '⏳' : '📜'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

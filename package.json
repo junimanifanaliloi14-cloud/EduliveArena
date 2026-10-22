@@ -12,6 +12,7 @@
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^14.4.0",
     "html-to-image": "^1.11.13",
+    "jszip": "^3.10.2",
     "next": "^15.5.27",
     "papaparse": "^5.7.0",
     "qrcode.react": "^4.2.0",

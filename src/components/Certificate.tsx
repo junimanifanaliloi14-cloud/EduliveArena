@@ -1,5 +1,6 @@
 'use client';
 import { forwardRef } from 'react';
+import { getOptimizedImageUrl } from '@/lib/imageHelper';
 
 interface CertificateProps {
   playerName: string;
@@ -20,7 +21,7 @@ export const Certificate = forwardRef<HTMLDivElement, CertificateProps>((props, 
     if (rank === 1) return 'JUARA 1';
     if (rank === 2) return 'JUARA 2';
     if (rank === 3) return 'JUARA 3';
-    return 'PESERTA TERBAIK';
+    return 'PESERTA';
   };
 
   const getRankColor = () => {
@@ -30,28 +31,25 @@ export const Certificate = forwardRef<HTMLDivElement, CertificateProps>((props, 
     return 'from-brand-400 to-brand-600 text-white';
   };
 
+  const optimizedLogo = hostLogo ? getOptimizedImageUrl(hostLogo) : null;
+
   return (
     <div 
       ref={ref} 
       style={{ width: '800px', height: '560px' }} 
       className="bg-slate-900 relative overflow-hidden flex flex-col items-center justify-center p-8"
     >
-      {/* Background Ornamen */}
       <div className="absolute inset-0 opacity-20">
         <div className="absolute top-0 left-0 w-96 h-96 bg-brand-500 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-500 rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
       </div>
 
-      {/* Bingkai Emas */}
       <div className="absolute inset-4 border-4 border-amber-500/50 rounded-2xl pointer-events-none" />
       <div className="absolute inset-6 border border-amber-500/30 rounded-xl pointer-events-none" />
 
-      {/* Konten Utama */}
       <div className="relative z-10 w-full flex flex-col items-center text-center">
-        
-        {/* Logo & Avatar */}
         <div className="flex items-center justify-center gap-4 mb-4">
-          {hostLogo && <img src={hostLogo} alt="Logo" className="h-12 object-contain" crossOrigin="anonymous" />}
+          {optimizedLogo && <img src={optimizedLogo} alt="Logo" className="h-12 object-contain" crossOrigin="anonymous" />}
           <div className="text-5xl bg-white/10 p-2 rounded-full border-2 border-white/20">{hostAvatar}</div>
         </div>
 
@@ -81,7 +79,6 @@ export const Certificate = forwardRef<HTMLDivElement, CertificateProps>((props, 
           </div>
         </div>
 
-        {/* Footer Tanda Tangan */}
         <div className="w-full flex justify-between items-end mt-auto px-12">
           <div className="text-left">
             <div className="text-sm text-slate-400 mb-1">Tanggal:</div>
@@ -93,7 +90,6 @@ export const Certificate = forwardRef<HTMLDivElement, CertificateProps>((props, 
             <div className="w-32 h-px bg-white/30 mt-2 ml-auto" />
           </div>
         </div>
-
       </div>
     </div>
   );

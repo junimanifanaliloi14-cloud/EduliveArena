@@ -6,15 +6,12 @@ import { initAudio, playCorrect, playWrong, playTick } from '@/lib/sound';
 import confetti from 'canvas-confetti';
 import { getOptimizedImageUrl } from '@/lib/imageHelper';
 import { useSearchParams } from 'next/navigation';
-import { toPng } from 'html-to-image';
-import { Certificate } from '@/components/Certificate';
 
 export default function PlayPage({ params }: { params: Promise<{ pin: string }> }) {
   const { pin } = use(params);
   const searchParams = useSearchParams();
   
   const socketRef = useRef<Socket | null>(null);
-  const certificateRef = useRef<HTMLDivElement>(null);
   
   const [connected, setConnected] = useState(false);
   const [name, setName] = useState('');
@@ -33,7 +30,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
   const [imgError, setImgError] = useState(false);
   const [imgLoading, setImgLoading] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
 
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
@@ -186,21 +182,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     socketRef.current.emit('player:powerup', { type: 'double' }, (res: any) => { if (!res.ok) setError(res.error); });
   }
 
-  async function downloadCertificate() {
-    if (!certificateRef.current) return;
-    setIsDownloading(true);
-    try {
-      const dataUrl = await toPng(certificateRef.current, { cacheBust: true, pixelRatio: 2 });
-      const link = document.createElement('a');
-      link.download = `Sertifikat_${myPlayer?.name}_${state?.session.pin}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      alert('Gagal mengunduh sertifikat. Coba lagi.');
-    }
-    setIsDownloading(false);
-  }
-
   if (kicked) {
     return (
       <main className="min-h-screen grid place-items-center px-6 bg-red-950/20">
@@ -284,7 +265,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const isShowing = state?.session.questionState === 'showing' && q;
   
   const myFinalData = finalReport?.players?.find((p: any) => p.id === myPlayer?.id);
-  const myRank = finalReport?.players?.findIndex((p: any) => p.id === myPlayer?.id) + 1;
   const myGroup = myPlayer?.group;
   const isGroupMode = state?.session.groupMode;
   const isEliminated = myPlayer?.isEliminated;
@@ -321,24 +301,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
 
   return (
     <main className="min-h-screen px-4 py-6 max-w-md mx-auto relative pb-24">
-      {/* Sertifikat Tersembunyi (Hanya untuk dirender jadi gambar) */}
-      {state?.session.status === 'ended' && myFinalData && (
-        <div className="fixed -top-[9999px] -left-[9999px]">
-          <Certificate
-            ref={certificateRef}
-            playerName={myPlayer?.name || 'Siswa'}
-            score={myFinalData.score}
-            rank={myRank || 1}
-            totalPlayers={finalReport?.players?.length || 1}
-            bankName={state.session.bankName}
-            hostName={state.session.hostName}
-            hostAvatar={state.session.hostAvatar}
-            hostLogo={state.session.hostLogo}
-            date={new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
-          />
-        </div>
-      )}
-
       <header className="flex items-center justify-between mb-4">
         <div>
           <div className="text-xs text-slate-400">
@@ -366,17 +328,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <h2 className="text-xl font-semibold mt-2">Sesi selesai</h2>
           <p className="text-slate-400 text-sm mt-1 mb-4">Skor akhir: <span className="text-brand-500 font-mono font-bold text-lg">{myPlayer?.score}</span></p>
           
-          {/* TOMBOL DOWNLOAD SERTIFIKAT */}
-          {myFinalData && (
-            <button 
-              onClick={downloadCertificate} 
-              disabled={isDownloading}
-              className="btn-primary w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 mb-4 disabled:opacity-50"
-            >
-              {isDownloading ? 'Membuat Sertifikat...' : '📥 Unduh Sertifikat Juara'}
-            </button>
-          )}
-
           {myFinalData && myFinalData.badges.length > 0 && (
             <div className="bg-white/5 rounded-xl p-4 mt-4">
               <div className="text-xs text-slate-400 uppercase tracking-widest mb-3">Pencapaianmu</div>
