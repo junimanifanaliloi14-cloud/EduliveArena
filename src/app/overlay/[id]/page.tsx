@@ -5,6 +5,7 @@ import { initAudio, playCorrect, playTick } from '@/lib/sound';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { QRCodeSVG } from 'qrcode.react';
+import { getOptimizedImageUrl } from '@/lib/imageHelper';
 
 interface FloatingEmoji { id: number; emoji: string; x: number; }
 
@@ -18,6 +19,22 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const [emojis, setEmojis] = useState<FloatingEmoji[]>([]);
   const [activeGift, setActiveGift] = useState<{ username: string; giftName: string } | null>(null);
   const lastTickedRef = useRef<number>(-1);
+  const [imgError, setImgError] = useState(false);
+
+  const s = state?.session;
+  const q = state?.question;
+
+  const estimatedServerNow = s?.isPaused ? s.pauseStartAt : (now - timeOffset);
+  const prepareEndAt = s?.questionStartAt || 0;
+  const questionEndAt = s?.questionEndAt || 0;
+
+  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - (now - timeOffset)) / 1000));
+  const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
+  const isPreparing = prepareLeft > 0;
+
+  useEffect(() => {
+    setImgError(false);
+  }, [state?.session.currentQuestionIndex]);
 
   useEffect(() => {
     const unlockAudio = () => initAudio();
@@ -59,20 +76,8 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
     return () => { socket.off('overlay:emoji', handleEmoji); socket.off('gift:received', handleGift); };
   }, [socket]);
 
-  if (!state) return null;
-  const s = state.session;
-  const q = state.question;
-
-  const estimatedServerNow = s.isPaused ? s.pauseStartAt : (now - timeOffset);
-  const prepareEndAt = s.questionStartAt || 0;
-  const questionEndAt = s.questionEndAt || 0;
-
-  const prepareLeft = Math.max(0, Math.ceil((prepareEndAt - (now - timeOffset)) / 1000));
-  const answerLeft = Math.max(0, Math.ceil((questionEndAt - estimatedServerNow) / 1000));
-  const isPreparing = prepareLeft > 0;
-
-  // FITUR BARU: Suara Detak Waktu di OBS
   useEffect(() => {
+    if (!s) return; 
     if (s.questionState === 'showing' && !isPreparing && !s.isPaused) {
       if (answerLeft > 0 && answerLeft <= 5 && lastTickedRef.current !== answerLeft) {
         lastTickedRef.current = answerLeft;
@@ -80,23 +85,23 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
       }
     }
     if (s.questionState !== 'showing') lastTickedRef.current = -1;
-  }, [answerLeft, s.questionState, isPreparing, s.isPaused]);
+  }, [answerLeft, s?.questionState, isPreparing, s?.isPaused]);
+
+  if (!state || !s) return null;
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const playUrl = origin + '/play/' + s.pin;
-
   const isLobby = s.questionState === 'idle' && s.currentQuestionIndex < 0;
 
-  // Menentukan animasi avatar
   let avatarAnim = {};
   if (s.isBossBattle) {
-    avatarAnim = { scale: [1, 1.2, 1], rotate: [0, -5, 5, 0], transition: { repeat: Infinity, duration: 1 } }; // Marah/Boss
+    avatarAnim = { scale: [1, 1.2, 1], rotate: [0, -5, 5, 0], transition: { repeat: Infinity, duration: 1 } }; 
   } else if (s.questionState === 'revealed') {
-    avatarAnim = { y: [0, -20, 0], transition: { repeat: Infinity, duration: 0.5 } }; // Lompat gembira
+    avatarAnim = { y: [0, -20, 0], transition: { repeat: Infinity, duration: 0.5 } }; 
   } else if (s.questionState === 'showing' && answerLeft <= 5 && !s.isPaused) {
-    avatarAnim = { x: [-2, 2, -2, 2, 0], transition: { repeat: Infinity, duration: 0.2 } }; // Gemetar panik
+    avatarAnim = { x: [-2, 2, -2, 2, 0], transition: { repeat: Infinity, duration: 0.2 } }; 
   } else {
-    avatarAnim = { y: [0, -5, 0], transition: { repeat: Infinity, duration: 3, ease: "easeInOut" } }; // Mengambang santai
+    avatarAnim = { y: [0, -5, 0], transition: { repeat: Infinity, duration: 3, ease: "easeInOut" } }; 
   }
 
   return (
@@ -170,7 +175,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
             <div className="w-24 flex flex-col items-center justify-start pt-6 border-r border-white/10 pr-4 mr-4">
               <div className="relative">
                 <div className={`absolute -inset-1 rounded-full blur opacity-75 animate-pulse ${s.isBossBattle ? 'bg-gradient-to-r from-red-600 to-orange-500' : 'bg-gradient-to-r from-brand-500 to-amber-500'}`}></div>
-                {/* AVATAR DENGAN ANIMASI */}
                 <motion.div animate={avatarAnim} className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">
                   {s.isBossBattle ? '😈' : '👩‍🏫'}
                 </motion.div>
@@ -217,8 +221,26 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
                         </div>
                       )}
 
-                      <div className="text-center mt-2 flex-1 flex items-center justify-center">
+                      <div className="text-center mt-2 flex-1 flex flex-col items-center justify-center">
                         <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
+                        {/* GAMBAR DI OBS DENGAN AUTO-RESIZE & FALLBACK */}
+                        {q.imageUrl && (
+                          <div className="mt-4 rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black/40 p-2 min-w-[200px] flex items-center justify-center">
+                            {imgError ? (
+                              <div className="text-slate-400 text-sm py-4 flex flex-col items-center">
+                                <span className="text-2xl mb-1">🖼️</span>
+                                Gambar gagal dimuat. Periksa kembali link gambar.
+                              </div>
+                            ) : (
+                              <img 
+                                src={getOptimizedImageUrl(q.imageUrl) || ''} 
+                                alt="Ilustrasi Soal" 
+                                className="max-h-48 object-contain" 
+                                onError={() => setImgError(true)} 
+                              />
+                            )}
+                          </div>
+                        )}
                       </div>
                       
                       <div className="grid grid-cols-2 gap-3 mt-6">

@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import type { PublicState } from '@/lib/types';
 import { initAudio, playCorrect, playWrong, playTick } from '@/lib/sound';
 import confetti from 'canvas-confetti';
+import { getOptimizedImageUrl } from '@/lib/imageHelper';
 
 export default function PlayPage({ params }: { params: Promise<{ pin: string }> }) {
   const { pin } = use(params);
@@ -21,6 +22,8 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const [finalReport, setFinalReport] = useState<any>(null);
   const [lastEmojiTime, setLastEmojiTime] = useState(0);
   const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
+  const [imgError, setImgError] = useState(false);
+  const [imgLoading, setImgLoading] = useState(false);
 
   const [now, setNow] = useState(Date.now());
   const [timeOffset, setTimeOffset] = useState(0);
@@ -32,6 +35,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   useEffect(() => {
     if (state?.session.currentQuestionIndex !== undefined) {
       setMyAnswer(null); setHiddenOptions([]); lastPlayedStateRef.current = ''; lastTickedRef.current = -1;
+      setImgError(false); setImgLoading(true);
     }
   }, [state?.session.currentQuestionIndex]);
 
@@ -39,7 +43,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     if (state?.session?.serverNow) setTimeOffset(Date.now() - state.session.serverNow);
   }, [state?.session?.serverNow]);
 
-  // Efek Suara Jawaban
   useEffect(() => {
     if (state?.session.questionState === 'revealed' && myAnswer) {
       const stateId = `${state.session.currentQuestionIndex}-${myAnswer.choice}`;
@@ -51,7 +54,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
     }
   }, [state?.session.questionState, myAnswer, isMuted, state?.session.currentQuestionIndex]);
 
-  // Kalkulasi Waktu (dipindah ke atas agar bisa diakses efek tick)
   const estimatedServerNow = state?.session.isPaused ? state.session.pauseStartAt : (now - timeOffset);
   const prepareEndAt = (state?.session.questionStartAt || 0);
   const questionEndAt = (state?.session.questionEndAt || 0);
@@ -61,7 +63,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
   const isPreparing = prepareLeft > 0;
   const isTimeUp = answerLeft === 0;
 
-  // FITUR BARU: Suara Detak Waktu
   useEffect(() => {
     if (state?.session.questionState === 'showing' && !isPreparing && !state?.session.isPaused && !isMuted) {
       if (answerLeft > 0 && answerLeft <= 5 && lastTickedRef.current !== answerLeft) {
@@ -200,7 +201,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <div className="text-6xl mb-4">💀</div>
           <h2 className="text-2xl font-bold text-red-400">Anda Tereliminasi</h2>
           <p className="text-slate-300 text-sm mt-2">Sayang sekali, Anda menjawab salah atau kehabisan waktu.</p>
-          <p className="text-slate-400 text-xs mt-4">Tetap semangat! Anda masih bisa menonton sisa pertandingan.</p>
         </div>
         
         <div className="card mt-4 w-full">
@@ -208,7 +208,7 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
           <ol className="space-y-1">
             {state.leaderboard.slice(0, 5).map(r => (
               <li key={r.id} className={`flex justify-between text-sm px-2 py-1.5 rounded ${r.id === myPlayer?.id ? 'bg-brand-500/15' : ''}`}>
-                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name} {isTeamMode && <span className="text-[10px] text-slate-500">({r.team === 'A' ? 'Merah' : 'Biru'})</span>}</span>
+                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name}</span>
                 <span className="font-mono">{r.score}</span>
               </li>
             ))}
@@ -270,7 +270,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
         <div className="card text-center">
           <div className="text-4xl animate-pulse">⏳</div>
           <p className="mt-3 text-slate-300">Menunggu guru memulai soal...</p>
-          {state && <p className="text-xs text-slate-500 mt-2">{state.playerCount} murid siap</p>}
         </div>
       )}
 
@@ -281,7 +280,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             <div className="absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center border border-amber-500/50 animate-pop">
               <div className="text-5xl mb-2">⏸️</div>
               <div className="text-xl font-bold text-amber-400">Kuis Dijeda</div>
-              <div className="text-sm text-slate-300 mt-1">Menunggu guru melanjutkan...</div>
             </div>
           )}
 
@@ -302,6 +300,32 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             )}
             
             <h2 className="text-lg font-semibold mt-2">{q.text}</h2>
+            
+            {/* GAMBAR SOAL DI MURID DENGAN AUTO-RESIZE & ERROR FALLBACK */}
+            {q.imageUrl && (
+              <div className="mt-4 rounded-xl overflow-hidden border border-white/10 flex flex-col items-center justify-center bg-black/20 p-2 min-h-[100px] relative">
+                {imgLoading && !imgError && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+                {imgError ? (
+                  <div className="text-slate-500 text-sm text-center py-4">
+                    <span className="text-2xl block mb-1">🖼️</span>
+                    Gambar gagal dimuat. Pastikan link adalah <b>Direct link</b> (bukan link halaman web) dan file Google Drive sudah diatur ke <b>"Anyone with the link"</b>. 
+                  </div>
+                ) : (
+                  <img 
+                    src={getOptimizedImageUrl(q.imageUrl) || ''} 
+                    alt="Ilustrasi Soal" 
+                    className={`max-h-64 object-contain transition-opacity duration-300 ${imgLoading ? 'opacity-0' : 'opacity-100'}`}
+                    loading="lazy"
+                    onLoad={() => setImgLoading(false)}
+                    onError={() => { setImgLoading(false); setImgError(true); }}
+                  />
+                )}
+              </div>
+            )}
           </div>
 
           {isPreparing ? (
@@ -348,20 +372,6 @@ export default function PlayPage({ params }: { params: Promise<{ pin: string }> 
             {myAnswer?.correct ? (<span className="text-emerald-400">✓ Benar! +{myAnswer.points} poin</span>) : myAnswer ? (<span className="text-red-400">✗ Belum tepat</span>) : (<span className="text-slate-400">Tidak menjawab</span>)}
           </div>
           {myPlayer && myPlayer.streak >= 2 && (<div className="mt-2 text-amber-400 text-sm">🔥 Streak {myPlayer.streak}</div>)}
-        </div>
-      )}
-
-      {state && state.leaderboard.length > 0 && state.session.status !== 'ended' && (
-        <div className="card mt-4">
-          <div className="text-xs uppercase text-slate-400 mb-2">Top 5</div>
-          <ol className="space-y-1">
-            {state.leaderboard.slice(0, 5).map(r => (
-              <li key={r.id} className={`flex justify-between text-sm px-2 py-1.5 rounded ${r.id === myPlayer?.id ? 'bg-brand-500/15' : ''}`}>
-                <span><span className="text-brand-500 font-mono w-5 inline-block">{r.rank}</span> {r.name} {isTeamMode && <span className="text-[10px] text-slate-500">({r.team === 'A' ? 'Merah' : 'Biru'})</span>}</span>
-                <span className="font-mono">{r.score}</span>
-              </li>
-            ))}
-          </ol>
         </div>
       )}
 

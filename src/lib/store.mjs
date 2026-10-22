@@ -12,11 +12,11 @@ const SEED_BANK = {
   subject: 'Matematika',
   createdAt: Date.now(),
   questions: [
-    { id: 'q1', text: 'Berapakah hasil dari 7 x 8?', options: ['54', '56', '58', '64'], correctIndex: 1, timeLimitSec: 20 },
-    { id: 'q2', text: 'Hasil dari 144 / 12 adalah...', options: ['10', '11', '12', '14'], correctIndex: 2, timeLimitSec: 20 },
-    { id: 'q3', text: 'Manakah bilangan prima?', options: ['21', '27', '29', '33'], correctIndex: 2, timeLimitSec: 20 },
-    { id: 'q4', text: 'Hasil dari 15 + 27 - 8 =', options: ['32', '34', '36', '38'], correctIndex: 1, timeLimitSec: 20 },
-    { id: 'q5', text: 'FPB dari 12 dan 18 adalah...', options: ['2', '3', '6', '9'], correctIndex: 2, timeLimitSec: 25 },
+    { id: 'q1', text: 'Berapakah hasil dari 7 x 8?', options: ['54', '56', '58', '64'], correctIndex: 1, timeLimitSec: 20, imageUrl: null },
+    { id: 'q2', text: 'Hasil dari 144 / 12 adalah...', options: ['10', '11', '12', '14'], correctIndex: 2, timeLimitSec: 20, imageUrl: null },
+    { id: 'q3', text: 'Manakah bilangan prima?', options: ['21', '27', '29', '33'], correctIndex: 2, timeLimitSec: 20, imageUrl: null },
+    { id: 'q4', text: 'Hasil dari 15 + 27 - 8 =', options: ['32', '34', '36', '38'], correctIndex: 1, timeLimitSec: 20, imageUrl: null },
+    { id: 'q5', text: 'FPB dari 12 dan 18 adalah...', options: ['2', '3', '6', '9'], correctIndex: 2, timeLimitSec: 25, imageUrl: null },
   ],
 };
 
@@ -36,6 +36,7 @@ class Store {
     }));
   }
   getBank(id) { return this.banks.get(id); }
+  deleteBank(id) { this.banks.delete(id); }
   createBank({ name, subject, questions = [] }) {
     const bank = { id: 'bank_' + nid(), name: name || 'Bank Baru', subject: subject || 'Umum', questions, createdAt: Date.now() };
     this.banks.set(bank.id, bank);
@@ -48,14 +49,14 @@ class Store {
     const session = {
       id: 'sess_' + nid(), pin: this._genPin(), bankId,
       hostName: hostName || 'Guru', status: 'lobby',
-      timeLimitSec: timeLimitSec || 20,
+      timeLimitSec: timeLimitSec || 20, // Default time
       autoReveal: autoReveal,
       teamMode: teamMode,
       eliminationMode: eliminationMode,
       bossQuestions: bossQuestions,
       shuffleOptions: shuffleOptions,
       currentQuestionIndex: -1, questionState: 'idle',
-      currentQ: null, // Menyimpan salinan soal yang mungkin sudah diacak
+      currentQ: null, 
       questionStartAt: null, questionEndAt: null,
       isPaused: false, pauseStartAt: null,
       players: new Map(), currentAnswers: new Map(),
@@ -96,19 +97,20 @@ class Store {
     s.pauseStartAt = null;
     
     const rawQ = bank.questions[s.currentQuestionIndex];
-    const timeLimit = s.timeLimitSec || rawQ.timeLimitSec || 20;
+    // Gunakan timeLimitSec per soal, jika tidak ada baru pakai default sesi
+    const timeLimit = rawQ.timeLimitSec || s.timeLimitSec || 20;
     
-    // FITUR BARU: Acak Opsi
     if (s.shuffleOptions) {
       const optionsWithIndex = rawQ.options.map((opt, idx) => ({ opt, isCorrect: idx === rawQ.correctIndex }));
       optionsWithIndex.sort(() => Math.random() - 0.5);
       s.currentQ = {
         ...rawQ,
         options: optionsWithIndex.map(o => o.opt),
-        correctIndex: optionsWithIndex.findIndex(o => o.isCorrect)
+        correctIndex: optionsWithIndex.findIndex(o => o.isCorrect),
+        timeLimitSec: timeLimit
       };
     } else {
-      s.currentQ = { ...rawQ };
+      s.currentQ = { ...rawQ, timeLimitSec: timeLimit };
     }
 
     s.questionStartAt = Date.now() + 3000; 
@@ -374,7 +376,7 @@ class Store {
         isBossBattle: isBossBattle,
         questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now(),
       },
-      question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: s.timeLimitSec, correctIndex: revealCorrect } : null,
+      question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: q.timeLimitSec, correctIndex: revealCorrect, imageUrl: q.imageUrl } : null,
       leaderboard, allPlayers, answerStats, playerCount: s.players.size,
     };
   }
