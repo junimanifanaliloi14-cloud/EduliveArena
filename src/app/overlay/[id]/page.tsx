@@ -54,14 +54,11 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
     }
   }, [state?.session.questionState, state?.session.currentQuestionIndex]);
 
-  // Tangkap event akhir sesi dari server
   useEffect(() => {
     if (!socket) return;
     const handleSessionEnded = (report: any) => {
       setFinalReport(report);
-      // Mainkan BGM Kemenangan
       playExternalSound('https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3');
-      // Tembakkan konfeti besar-besaran
       const duration = 5000;
       const end = Date.now() + duration;
       const frame = () => {
@@ -123,14 +120,16 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const playUrl = origin + '/play/' + s.pin;
   const isLobby = s.questionState === 'idle' && s.currentQuestionIndex < 0;
 
-  // Data untuk Podium (Ambil Top 3 dari finalReport atau leaderboard)
-  const podiumData = finalReport 
-    ? finalReport.players.slice(0, 3) 
-    : state.leaderboard.slice(0, 3);
-
+  const allPlayers = finalReport ? finalReport.players : state.leaderboard;
+  const podiumData = allPlayers.slice(0, 3);
   const first = podiumData[0];
   const second = podiumData[1];
   const third = podiumData[2];
+
+  const shouldScroll = allPlayers.length > 5;
+  // Duplikasi list untuk efek scroll tanpa putus
+  const scrollData = shouldScroll ? [...allPlayers, ...allPlayers] : allPlayers;
+  const scrollDuration = allPlayers.length * 3; // 3 detik per peserta (makin banyak makin cepat sedikit)
 
   let avatarAnim = {};
   if (s.isBossBattle) {
@@ -155,7 +154,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
             <span className="text-6xl">🔊</span>
           </div>
           <h1 className="text-4xl font-bold text-white mb-2">KLIK UNTUK MENGAKTIFKAN SUARA</h1>
-          <p className="text-slate-300">Browser memblokir audio otomatis. Klik di mana saja pada layar ini untuk memulai game.</p>
         </div>
       )}
 
@@ -180,49 +178,95 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
       </div>
 
       {s.status === 'ended' ? (
-        /* ================= TAMPILAN PODIUM JUARA ================= */
-        <div className="max-w-5xl mx-auto h-[85vh] flex flex-col justify-end relative z-10 pb-10 animate-pop">
-          <div className="text-center mb-12">
-            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-300 uppercase tracking-widest drop-shadow-[0_0_20px_rgba(245,158,11,0.5)]">
-              🏆 KUIS SELESAI 🏆
-            </h1>
-            <p className="text-2xl text-slate-300 mt-2">{s.bankName}</p>
+        /* ================= TAMPILAN PODIUM JUARA (LAYOUT SPLIT) ================= */
+        <div className="max-w-7xl mx-auto h-[85vh] grid grid-cols-3 gap-8 relative z-10 animate-pop">
+          
+          {/* KOLOM KIRI: PODIUM */}
+          <div className="col-span-2 flex flex-col justify-end pb-10">
+            <div className="text-center mb-12">
+              <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-300 uppercase tracking-widest drop-shadow-[0_0_20px_rgba(245,158,11,0.5)]">
+                🏆 HALL OF FAME 🏆
+              </h1>
+              <p className="text-2xl text-slate-300 mt-2">{s.bankName}</p>
+            </div>
+
+            <div className="flex justify-center items-end gap-4 h-64">
+              {/* JUARA 2 */}
+              {second && (
+                <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5, type: 'spring' }} className="w-48 flex flex-col items-center">
+                  <div className="text-6xl mb-2">🥈</div>
+                  <div className="font-bold text-xl text-slate-200 mb-1 truncate w-full text-center px-2">{second.name}</div>
+                  <div className="text-brand-500 font-mono font-bold text-lg mb-2">{second.score}</div>
+                  <div className="w-full h-32 bg-gradient-to-t from-slate-700 to-slate-500 rounded-t-lg border-t-4 border-slate-300 shadow-[0_0_20px_rgba(148,163,184,0.4)]" />
+                </motion.div>
+              )}
+
+              {/* JUARA 1 */}
+              {first && (
+                <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2, type: 'spring' }} className="w-56 flex flex-col items-center z-10 relative">
+                  <div className="absolute -top-16 text-7xl animate-bounce">👑</div>
+                  <div className="text-7xl mb-2 drop-shadow-[0_0_15px_rgba(245,158,11,0.8)]">🥇</div>
+                  <div className="font-black text-2xl text-amber-400 mb-1 truncate w-full text-center px-2">{first.name}</div>
+                  <div className="text-amber-300 font-mono font-black text-2xl mb-2">{first.score}</div>
+                  <div className="w-full h-44 bg-gradient-to-t from-amber-700 to-amber-400 rounded-t-lg border-t-4 border-amber-200 shadow-[0_0_30px_rgba(245,158,11,0.6)] flex items-start justify-center pt-4">
+                    <span className="text-amber-900 font-black opacity-30 text-4xl">1st</span>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* JUARA 3 */}
+              {third && (
+                <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.8, type: 'spring' }} className="w-48 flex flex-col items-center">
+                  <div className="text-6xl mb-2">🥉</div>
+                  <div className="font-bold text-xl text-slate-200 mb-1 truncate w-full text-center px-2">{third.name}</div>
+                  <div className="text-brand-500 font-mono font-bold text-lg mb-2">{third.score}</div>
+                  <div className="w-full h-24 bg-gradient-to-t from-orange-800 to-orange-600 rounded-t-lg border-t-4 border-orange-400 shadow-[0_0_20px_rgba(194,65,12,0.4)]" />
+                </motion.div>
+              )}
+            </div>
           </div>
 
-          <div className="flex justify-center items-end gap-4 h-64">
-            {/* JUARA 2 */}
-            {second && (
-              <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5, type: 'spring' }} className="w-48 flex flex-col items-center">
-                <div className="text-6xl mb-2">🥈</div>
-                <div className="font-bold text-xl text-slate-200 mb-1 truncate w-full text-center px-2">{second.name}</div>
-                <div className="text-brand-500 font-mono font-bold text-lg mb-2">{second.score}</div>
-                <div className="w-full h-32 bg-gradient-to-t from-slate-700 to-slate-500 rounded-t-lg border-t-4 border-slate-300 shadow-[0_0_20px_rgba(148,163,184,0.4)]" />
-              </motion.div>
-            )}
+          {/* KOLOM KANAN: DAFTAR SEMUA PESERTA BERGULIR */}
+          <div className="col-span-1 h-full flex flex-col justify-center py-8">
+            <div className="card bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl flex flex-col h-[65vh] overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+              <div className="text-center py-3 border-b border-white/10 bg-white/5 text-sm font-bold uppercase tracking-widest text-slate-300 flex-shrink-0">
+                Klasemen Lengkap
+              </div>
+              <div className="flex-1 relative overflow-hidden p-2">
+                {/* Efek Gradient atas dan bawah agar menyatu */}
+                <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none" />
+                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-black/80 to-transparent z-10 pointer-events-none" />
+                
+                {/* Kontainer Gulir */}
+                <div 
+                  className={`flex flex-col gap-1 ${shouldScroll ? 'animate-scroll-slow hover:[animation-play-state:paused]' : ''}`}
+                  style={{ animationDuration: `${scrollDuration}s` }}
+                >
+                  {scrollData.map((p: any, i: number) => {
+                    // Menentukan warna berdasarkan peringkat asli (modulo panjang array asli)
+                    const actualRank = (i % allPlayers.length) + 1;
+                    let bgClass = "bg-white/5";
+                    let textClass = "text-slate-300";
+                    if (actualRank === 1) { bgClass = "bg-amber-500/20 border border-amber-500/30"; textClass = "text-amber-300 font-bold"; }
+                    else if (actualRank === 2) { bgClass = "bg-slate-400/20 border border-slate-400/30"; textClass = "text-slate-200 font-bold"; }
+                    else if (actualRank === 3) { bgClass = "bg-orange-700/20 border border-orange-700/30"; textClass = "text-orange-300 font-bold"; }
+                    else if (p.isEliminated) { bgClass = "bg-red-950/20 opacity-60"; }
 
-            {/* JUARA 1 */}
-            {first && (
-              <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2, type: 'spring' }} className="w-56 flex flex-col items-center z-10 relative">
-                <div className="absolute -top-16 text-7xl animate-bounce">👑</div>
-                <div className="text-7xl mb-2 drop-shadow-[0_0_15px_rgba(245,158,11,0.8)]">🥇</div>
-                <div className="font-black text-2xl text-amber-400 mb-1 truncate w-full text-center px-2">{first.name}</div>
-                <div className="text-amber-300 font-mono font-black text-2xl mb-2">{first.score}</div>
-                <div className="w-full h-44 bg-gradient-to-t from-amber-700 to-amber-400 rounded-t-lg border-t-4 border-amber-200 shadow-[0_0_30px_rgba(245,158,11,0.6)] flex items-start justify-center pt-4">
-                  <span className="text-amber-900 font-black opacity-30 text-4xl">1st</span>
+                    return (
+                      <div key={`${p.id}-${i}`} className={`flex items-center justify-between px-3 py-2 rounded-lg ${bgClass} flex-shrink-0`}>
+                        <div className="flex items-center gap-3">
+                          <span className={`w-6 text-center font-mono text-sm ${textClass}`}>{actualRank}</span>
+                          <span className={`text-sm ${textClass}`}>{p.name} {p.isEliminated && '💀'}</span>
+                        </div>
+                        <span className="font-mono text-sm text-slate-400">{p.score}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              </motion.div>
-            )}
-
-            {/* JUARA 3 */}
-            {third && (
-              <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.8, type: 'spring' }} className="w-48 flex flex-col items-center">
-                <div className="text-6xl mb-2">🥉</div>
-                <div className="font-bold text-xl text-slate-200 mb-1 truncate w-full text-center px-2">{third.name}</div>
-                <div className="text-brand-500 font-mono font-bold text-lg mb-2">{third.score}</div>
-                <div className="w-full h-24 bg-gradient-to-t from-orange-800 to-orange-600 rounded-t-lg border-t-4 border-orange-400 shadow-[0_0_20px_rgba(194,65,12,0.4)]" />
-              </motion.div>
-            )}
+              </div>
+            </div>
           </div>
+
         </div>
       ) : isLobby ? (
         /* ================= TAMPILAN LOBBY ================= */
