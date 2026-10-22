@@ -1,7 +1,7 @@
 'use client';
 import { useSessionSocket } from '@/lib/useSocket';
 import { useEffect, useState, useRef, use } from 'react';
-import { initAudio, playCorrect, playTick } from '@/lib/sound';
+import { initAudio, playCorrect, playTick, playExternalSound } from '@/lib/sound';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { QRCodeSVG } from 'qrcode.react';
@@ -20,6 +20,8 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   const [activeGift, setActiveGift] = useState<{ username: string; giftName: string } | null>(null);
   const lastTickedRef = useRef<number>(-1);
   const [imgError, setImgError] = useState(false);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [finalReport, setFinalReport] = useState<any>(null);
 
   const s = state?.session;
   const q = state?.question;
@@ -35,13 +37,6 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   useEffect(() => {
     setImgError(false);
   }, [state?.session.currentQuestionIndex]);
-
-  useEffect(() => {
-    const unlockAudio = () => initAudio();
-    window.addEventListener('click', unlockAudio, { once: true });
-    document.addEventListener('keydown', unlockAudio, { once: true });
-    return () => { window.removeEventListener('click', unlockAudio); document.removeEventListener('keydown', unlockAudio); };
-  }, []);
 
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 100); return () => clearInterval(t); }, []);
 
@@ -59,39 +54,83 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
     }
   }, [state?.session.questionState, state?.session.currentQuestionIndex]);
 
+  // Tangkap event akhir sesi dari server
   useEffect(() => {
     if (!socket) return;
+    const handleSessionEnded = (report: any) => {
+      setFinalReport(report);
+      // Mainkan BGM Kemenangan
+      playExternalSound('https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3');
+      // Tembakkan konfeti besar-besaran
+      const duration = 5000;
+      const end = Date.now() + duration;
+      const frame = () => {
+        confetti({ particleCount: 10, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#f97316', '#eab308', '#3b82f6', '#ef4444', '#22c55e'] });
+        confetti({ particleCount: 10, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#f97316', '#eab308', '#3b82f6', '#ef4444', '#22c55e'] });
+        if (Date.now() < end) requestAnimationFrame(frame);
+      };
+      frame();
+    };
+
+    socket.on('session:ended', handleSessionEnded);
+    return () => { socket.off('session:ended', handleSessionEnded); };
+  }, [socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+    
     const handleEmoji = ({ emoji, id: emojiId }: any) => {
       const xPos = Math.random() * 80 + 10;
       setEmojis(prev => [...prev, { id: emojiId, emoji, x: xPos }]);
       setTimeout(() => { setEmojis(prev => prev.filter(e => e.id !== emojiId)); }, 3000);
     };
+    
     const handleGift = (data: any) => {
       setActiveGift(data);
       confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 }, colors: ['#f97316', '#eab308', '#3b82f6', '#ef4444', '#22c55e'] });
       setTimeout(() => setActiveGift(null), 5000);
     };
+
+    const handleSound = (url: string) => {
+      if (url) playExternalSound(url);
+    };
+
     socket.on('overlay:emoji', handleEmoji);
     socket.on('gift:received', handleGift);
-    return () => { socket.off('overlay:emoji', handleEmoji); socket.off('gift:received', handleGift); };
+    socket.on('overlay:sound', handleSound);
+    
+    return () => { 
+      socket.off('overlay:emoji', handleEmoji); 
+      socket.off('gift:received', handleGift); 
+      socket.off('overlay:sound', handleSound);
+    };
   }, [socket]);
 
   useEffect(() => {
     if (!s) return; 
-    if (s.questionState === 'showing' && !isPreparing && !s.isPaused) {
+    if (s.questionState === 'showing' && !isPreparing && !s.isPaused && audioUnlocked) {
       if (answerLeft > 0 && answerLeft <= 5 && lastTickedRef.current !== answerLeft) {
         lastTickedRef.current = answerLeft;
         playTick();
       }
     }
     if (s.questionState !== 'showing') lastTickedRef.current = -1;
-  }, [answerLeft, s?.questionState, isPreparing, s?.isPaused]);
+  }, [answerLeft, s?.questionState, isPreparing, s?.isPaused, audioUnlocked]);
 
   if (!state || !s) return null;
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const playUrl = origin + '/play/' + s.pin;
   const isLobby = s.questionState === 'idle' && s.currentQuestionIndex < 0;
+
+  // Data untuk Podium (Ambil Top 3 dari finalReport atau leaderboard)
+  const podiumData = finalReport 
+    ? finalReport.players.slice(0, 3) 
+    : state.leaderboard.slice(0, 3);
+
+  const first = podiumData[0];
+  const second = podiumData[1];
+  const third = podiumData[2];
 
   let avatarAnim = {};
   if (s.isBossBattle) {
@@ -107,6 +146,19 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
   return (
     <div className="min-h-screen p-6 bg-transparent relative overflow-hidden">
       
+      {!audioUnlocked && (
+        <div 
+          onClick={() => { initAudio(); setAudioUnlocked(true); }}
+          className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-slate-900/90"
+        >
+          <div className="bg-brand-500 text-white p-8 rounded-full mb-6 animate-bounce shadow-[0_0_50px_rgba(249,115,22,0.5)]">
+            <span className="text-6xl">🔊</span>
+          </div>
+          <h1 className="text-4xl font-bold text-white mb-2">KLIK UNTUK MENGAKTIFKAN SUARA</h1>
+          <p className="text-slate-300">Browser memblokir audio otomatis. Klik di mana saja pada layar ini untuk memulai game.</p>
+        </div>
+      )}
+
       <AnimatePresence>
         {activeGift && (
           <motion.div initial={{ y: -100, opacity: 0, scale: 0.8 }} animate={{ y: 20, opacity: 1, scale: 1 }} exit={{ y: -100, opacity: 0, scale: 0.8 }} className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold px-8 py-4 rounded-full shadow-[0_0_30px_rgba(245,158,11,0.6)] flex items-center gap-4 border-2 border-amber-300">
@@ -127,7 +179,53 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
         </AnimatePresence>
       </div>
 
-      {isLobby ? (
+      {s.status === 'ended' ? (
+        /* ================= TAMPILAN PODIUM JUARA ================= */
+        <div className="max-w-5xl mx-auto h-[85vh] flex flex-col justify-end relative z-10 pb-10 animate-pop">
+          <div className="text-center mb-12">
+            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-300 uppercase tracking-widest drop-shadow-[0_0_20px_rgba(245,158,11,0.5)]">
+              🏆 KUIS SELESAI 🏆
+            </h1>
+            <p className="text-2xl text-slate-300 mt-2">{s.bankName}</p>
+          </div>
+
+          <div className="flex justify-center items-end gap-4 h-64">
+            {/* JUARA 2 */}
+            {second && (
+              <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5, type: 'spring' }} className="w-48 flex flex-col items-center">
+                <div className="text-6xl mb-2">🥈</div>
+                <div className="font-bold text-xl text-slate-200 mb-1 truncate w-full text-center px-2">{second.name}</div>
+                <div className="text-brand-500 font-mono font-bold text-lg mb-2">{second.score}</div>
+                <div className="w-full h-32 bg-gradient-to-t from-slate-700 to-slate-500 rounded-t-lg border-t-4 border-slate-300 shadow-[0_0_20px_rgba(148,163,184,0.4)]" />
+              </motion.div>
+            )}
+
+            {/* JUARA 1 */}
+            {first && (
+              <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2, type: 'spring' }} className="w-56 flex flex-col items-center z-10 relative">
+                <div className="absolute -top-16 text-7xl animate-bounce">👑</div>
+                <div className="text-7xl mb-2 drop-shadow-[0_0_15px_rgba(245,158,11,0.8)]">🥇</div>
+                <div className="font-black text-2xl text-amber-400 mb-1 truncate w-full text-center px-2">{first.name}</div>
+                <div className="text-amber-300 font-mono font-black text-2xl mb-2">{first.score}</div>
+                <div className="w-full h-44 bg-gradient-to-t from-amber-700 to-amber-400 rounded-t-lg border-t-4 border-amber-200 shadow-[0_0_30px_rgba(245,158,11,0.6)] flex items-start justify-center pt-4">
+                  <span className="text-amber-900 font-black opacity-30 text-4xl">1st</span>
+                </div>
+              </motion.div>
+            )}
+
+            {/* JUARA 3 */}
+            {third && (
+              <motion.div initial={{ y: 200, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.8, type: 'spring' }} className="w-48 flex flex-col items-center">
+                <div className="text-6xl mb-2">🥉</div>
+                <div className="font-bold text-xl text-slate-200 mb-1 truncate w-full text-center px-2">{third.name}</div>
+                <div className="text-brand-500 font-mono font-bold text-lg mb-2">{third.score}</div>
+                <div className="w-full h-24 bg-gradient-to-t from-orange-800 to-orange-600 rounded-t-lg border-t-4 border-orange-400 shadow-[0_0_20px_rgba(194,65,12,0.4)]" />
+              </motion.div>
+            )}
+          </div>
+        </div>
+      ) : isLobby ? (
+        /* ================= TAMPILAN LOBBY ================= */
         <div className="max-w-6xl mx-auto grid grid-cols-3 gap-8 relative z-10 items-center min-h-[80vh] animate-pop">
           <div className="col-span-2 flex flex-col justify-center">
             <div className="text-brand-500 font-bold tracking-widest uppercase text-sm mb-2">Live Quiz Session</div>
@@ -169,6 +267,7 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
           </div>
         </div>
       ) : (
+        /* ================= TAMPILAN KUIS UTAMA ================= */
         <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
           <div className="col-span-2 card min-h-[380px] flex flex-row relative overflow-hidden">
             
@@ -223,11 +322,10 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
 
                       <div className="text-center mt-2 flex-1 flex flex-col items-center justify-center">
                         <h1 className="text-4xl font-bold leading-tight">{q.text}</h1>
-                        {/* GAMBAR DI OBS DENGAN AUTO-RESIZE & FALLBACK */}
                         {q.imageUrl && (
                           <div className="mt-4 rounded-xl overflow-hidden border border-white/20 shadow-lg bg-black/40 p-2 min-w-[200px] flex items-center justify-center">
                             {imgError ? (
-                              <div className="text-slate-400 text-sm py-4 flex flex-col items-center">
+                              <div className="text-slate-400 text-sm py-4 flex flex-col items-center text-center px-4">
                                 <span className="text-2xl mb-1">🖼️</span>
                                 Gambar gagal dimuat. Periksa kembali link gambar.
                               </div>

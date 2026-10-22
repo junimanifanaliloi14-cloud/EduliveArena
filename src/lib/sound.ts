@@ -15,7 +15,6 @@ export function playCorrect() {
   initAudio();
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
-  // Nada C5, E5, G5 (Arpeggio naik)
   [523.25, 659.25, 783.99].forEach((freq, i) => {
     const osc = audioCtx!.createOscillator();
     const gain = audioCtx!.createGain();
@@ -47,7 +46,6 @@ export function playWrong() {
   osc.stop(now + 0.4);
 }
 
-// FITUR BARU: Suara Detak Waktu
 export function playTick() {
   initAudio();
   if (!audioCtx) return;
@@ -55,11 +53,24 @@ export function playTick() {
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.type = 'triangle';
-  osc.frequency.setValueAtTime(800, now); // Nada tinggi "Tik"
+  osc.frequency.setValueAtTime(800, now); 
   gain.gain.setValueAtTime(0.1, now);
   gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
   osc.start(now);
   osc.stop(now + 0.1);
+}
+
+// Fungsi untuk memutar file MP3 dari URL (Soundboard) - VERSI PERBAIKAN
+export function playExternalSound(url: string) {
+  initAudio(); 
+  const audio = new Audio(url);
+  // Hapus crossOrigin karena CDN publik biasanya sudah mengizinkan pemutaran langsung
+  audio.volume = 0.8;
+  audio.play().catch(e => {
+    console.warn('Gagal memutar audio eksternal:', e.message);
+    // Fallback jika audio eksternal gagal (opsional): mainkan suara sintesis
+    playCorrect();
+  });
 }

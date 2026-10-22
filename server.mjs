@@ -64,7 +64,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // FITUR BARU: Power-up
   socket.on('player:powerup', ({ type }, ack) => {
     const { sessionId, playerId } = socket.data;
     if (!sessionId || !playerId) return ack?.({ ok: false, error: 'Belum join' });
@@ -92,6 +91,13 @@ io.on('connection', (socket) => {
     const { sessionId } = socket.data;
     if (sessionId) {
       io.to(`session:${sessionId}`).emit('overlay:emoji', { emoji, id: Date.now() + Math.random() });
+    }
+  });
+
+  // FITUR BARU: Event Suara dari Guru ke OBS
+  socket.on('host:sound', ({ sessionId, soundUrl }) => {
+    if (sessionId && soundUrl) {
+      io.to(`session:${sessionId}`).emit('overlay:sound', soundUrl);
     }
   });
 

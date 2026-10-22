@@ -11,6 +11,9 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   const [busy, setBusy] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
 
+  // FITUR BARU: Referensi socket untuk mengirim suara
+  const { socket } = useSessionSocket(id); 
+
   async function action(a: 'start' | 'next' | 'reveal' | 'end' | 'pause' | 'resume') {
     setBusy(a);
     const res = await fetch('/api/sessions/' + id + '/control', {
@@ -23,6 +26,12 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       setReport(r.report);
     }
     setBusy(null);
+  }
+
+  function playSound(url: string) {
+    if (socket && state) {
+      socket.emit('host:sound', { sessionId: state.session.id, soundUrl: url });
+    }
   }
 
   async function triggerMockGift() {
@@ -68,6 +77,14 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const playUrl = origin + '/play/' + s.pin;
   const overlayUrl = origin + '/overlay/' + s.id;
+
+  // URL Efek Suara Gratis
+  const SFX = {
+    drumroll: 'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
+    cheer: 'https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3',
+    boo: 'https://assets.mixkit.co/active_storage/sfx/2016/2016-preview.mp3',
+    ding: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'
+  };
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -122,8 +139,21 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
         </div>
       </div>
 
+      {/* KOTAK SOUNDBOARD */}
       <section className="card">
-        <h2 className="font-semibold mb-3">Kontrol</h2>
+        <h2 className="font-semibold mb-3 flex items-center gap-2">
+          <span>🎵</span> Soundboard Game Show
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => playSound(SFX.drumroll)} className="btn-ghost bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30 text-sm">🥁 Drumroll</button>
+          <button onClick={() => playSound(SFX.cheer)} className="btn-ghost bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm">🎉 Sorak Sorai</button>
+          <button onClick={() => playSound(SFX.boo)} className="btn-ghost bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 text-sm">👎 Kekecewaan</button>
+          <button onClick={() => playSound(SFX.ding)} className="btn-ghost bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 text-sm">🔔 Bel Ding</button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2 className="font-semibold mb-3">Kontrol Utama</h2>
         <div className="flex flex-wrap gap-2 items-center">
           {s.status === 'lobby' && (
             <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">{busy === 'start' ? 'Memulai...' : 'Mulai Sesi'}</button>
@@ -135,7 +165,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
             <>
               <button onClick={() => action('reveal')} disabled={!!busy} className="btn-ghost">{busy === 'reveal' ? '...' : 'Buka Jawaban'}</button>
               <button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>
-                {s.isPaused ? '▶ Lanjutkan Waktu' : '⏸ Jeda Waktu'}
+                {s.isPaused ? '▶ Lanjutkan' : '⏸ Jeda'}
               </button>
             </>
           )}
