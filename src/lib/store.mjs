@@ -1,4 +1,3 @@
-// In-memory store + scoring engine (MVP). Produksi: swap ke PostgreSQL+Redis.
 function nid(len = 8) {
   const c = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let o = '';
@@ -7,10 +6,7 @@ function nid(len = 8) {
 }
 
 const SEED_BANK = {
-  id: 'bank_demo_1',
-  name: 'Matematika Dasar - Operasi Bilangan',
-  subject: 'Matematika',
-  createdAt: Date.now(),
+  id: 'bank_demo_1', name: 'Matematika Dasar - Operasi Bilangan', subject: 'Matematika', createdAt: Date.now(),
   questions: [
     { id: 'q1', text: 'Berapakah hasil dari 7 x 8?', options: ['54', '56', '58', '64'], correctIndex: 1, timeLimitSec: 20, imageUrl: null },
     { id: 'q2', text: 'Hasil dari 144 / 12 adalah...', options: ['10', '11', '12', '14'], correctIndex: 2, timeLimitSec: 20, imageUrl: null },
@@ -26,6 +22,7 @@ class Store {
     this.sessions = new Map();
     this.sessionsByPin = new Map();
     this.timers = new Map();
+    this.autoPlayTimers = new Map();
     this.banks.set(SEED_BANK.id, SEED_BANK);
   }
 
@@ -43,36 +40,23 @@ class Store {
   }
   deleteBank(id) { this.banks.delete(id); }
 
-  createSession({ bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal = true, ttsEnabled = false, ttsSpeed = 1, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [], aiConfig = null }) {
+  createSession({ bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal = true, ttsEnabled = false, ttsSpeed = 1, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [], aiConfig = null, autoPlay = false, autoPlayDelaySec = 5 }) {
     const bank = this.banks.get(bankId);
     if (!bank) throw new Error('Bank tidak ditemukan');
     const session = {
       id: 'sess_' + nid(), pin: this._genPin(), bankId,
-      hostName: hostName || 'Guru', 
-      hostAvatar: hostAvatar || '👩‍🏫',
-      hostLogo: hostLogo || null,
-      status: 'lobby',
-      timeLimitSec: timeLimitSec || 20,
-      autoReveal: autoReveal,
-      ttsEnabled: ttsEnabled,
-      ttsSpeed: ttsSpeed,
-      groupMode: groupMode,
-      groupCount: groupCount,
-      groupNames: groupNames,
-      eliminationMode: eliminationMode,
-      bossQuestions: bossQuestions,
-      shuffleOptions: shuffleOptions,
-      tournamentMode: tournamentMode,
-      expectedPlayers: expectedPlayers,
-      invitationCodes: invitationCodes,
-      aiConfig: aiConfig, // { provider, apiKey } untuk review
+      hostName: hostName || 'Guru', hostAvatar: hostAvatar || '👩‍🏫', hostLogo: hostLogo || null,
+      status: 'lobby', timeLimitSec: timeLimitSec || 20,
+      autoReveal, ttsEnabled, ttsSpeed,
+      groupMode, groupCount, groupNames,
+      eliminationMode, bossQuestions, shuffleOptions,
+      tournamentMode, expectedPlayers, invitationCodes, aiConfig,
+      autoPlay, autoPlayDelaySec, isAutoPlaying: false,
       currentQuestionIndex: -1, questionState: 'idle',
-      currentQ: null, 
-      questionStartAt: null, questionEndAt: null,
+      currentQ: null, questionStartAt: null, questionEndAt: null,
       isPaused: false, pauseStartAt: null,
       players: new Map(), currentAnswers: new Map(),
-      questionStats: [],
-      createdAt: Date.now(), endedAt: null,
+      questionStats: [], createdAt: Date.now(), endedAt: null,
     };
     this.sessions.set(session.id, session);
     this.sessionsByPin.set(session.pin, session.id);
@@ -91,9 +75,84 @@ class Store {
   startSession(id) {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Sesi tidak ditemukan');
-    if (s.status === 'lobby') s.status = 'live';
+    if (s.status === 'lobby') {
+      s.status = 'live';
+      if (s.autoPlay) {
+        s.isAutoPlaying = true;
+        this._autoPlayTick(id);
+      }
+    }
     return s;
   }
+
+  stopAutoPlay(id) {
+    const s = this.sessions.get(id);
+    if (s) s.isAutoPlaying = false;
+    return s;
+  }
+
+  _autoPlayTick(id) {
+    const s = this.sessions.get(id);
+    if (!s || !s.isAutoPlaying) return;
+    if (s.isPaused) { setTimeout(() => this._autoPlayTick(id), 500); return; }
+    if (s.status === 'ended') { s.isAutoPlaying = false; return; }
+
+    const bank = this.banks.get(s.bankId);
+
+    // Semua soal selesai
+    if (s.currentQuestionIndex + 1 >= bank.questions.length && s.questionState === 'revealed') {
+      setTimeout(() => {
+        const s2 = this.sessions.get(id);
+        if (!s2 || !s2.isAutoPlaying) return;
+        this.endSession(id);
+        s2.isAutoPlaying = false;
+        this._emitState(id);
+      }, s.autoPlayDelaySec * 1000);
+      return;
+    }
+
+    // Belum mulai atau sudah selesai, siap ke soal berikutnya
+    if (s.questionState === 'idle' || s.questionState === 'revealed') {
+      const waitTime = s.questionState === 'revealed' ? s.autoPlayDelaySec * 1000 : 1500;
+      setTimeout(() => {
+        const s2 = this.sessions.get(id);
+        if (!s2 || !s2.isAutoPlaying) return;
+        if (s2.isPaused) { this._autoPlayTick(id); return; }
+        this.nextQuestion(id);
+        this._emitState(id);
+        this._autoPlayTick(id);
+      }, waitTime);
+      return;
+    }
+
+    // Sedang menampilkan soal, tunggu timer habis
+    if (s.questionState === 'showing') {
+      const waitMs = Math.max(0, s.questionEndAt - Date.now() + 500);
+      setTimeout(() => {
+        const s2 = this.sessions.get(id);
+        if (!s2 || !s2.isAutoPlaying) return;
+        if (s2.isPaused) { this._autoPlayTick(id); return; }
+        if (s2.questionState === 'showing') {
+          this.revealAnswer(id);
+          this._emitState(id);
+        }
+        this._autoPlayTick(id);
+      }, waitMs);
+      return;
+    }
+  }
+
+  _emitState(id) {
+    if (globalThis.__IO__) {
+      const s = this.sessions.get(id);
+      if (!s) return;
+      globalThis.__IO__.to('session:' + id).emit('session:state', this.getPublicState(id));
+      for (const pid of s.players.keys()) {
+        globalThis.__IO__.to('player:' + pid).emit('player:state', this.getPlayerState(id, pid));
+      }
+    }
+  }
+
   nextQuestion(id) {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Sesi tidak ditemukan');
@@ -101,7 +160,6 @@ class Store {
     if (s.currentQuestionIndex + 1 >= bank.questions.length) return { ...s, done: true };
     
     this._clearTimer(id);
-
     s.currentQuestionIndex++;
     s.questionState = 'showing';
     s.isPaused = false;
@@ -113,12 +171,7 @@ class Store {
     if (s.shuffleOptions) {
       const optionsWithIndex = rawQ.options.map((opt, idx) => ({ opt, isCorrect: idx === rawQ.correctIndex }));
       optionsWithIndex.sort(() => Math.random() - 0.5);
-      s.currentQ = {
-        ...rawQ,
-        options: optionsWithIndex.map(o => o.opt),
-        correctIndex: optionsWithIndex.findIndex(o => o.isCorrect),
-        timeLimitSec: timeLimit
-      };
+      s.currentQ = { ...rawQ, options: optionsWithIndex.map(o => o.opt), correctIndex: optionsWithIndex.findIndex(o => o.isCorrect), timeLimitSec: timeLimit };
     } else {
       s.currentQ = { ...rawQ, timeLimitSec: timeLimit };
     }
@@ -132,7 +185,6 @@ class Store {
       const timer = setTimeout(() => this._autoReveal(id), delay);
       this.timers.set(id, timer);
     }
-
     return s;
   }
   
@@ -149,10 +201,7 @@ class Store {
   }
 
   _clearTimer(id) {
-    if (this.timers.has(id)) {
-      clearTimeout(this.timers.get(id));
-      this.timers.delete(id);
-    }
+    if (this.timers.has(id)) { clearTimeout(this.timers.get(id)); this.timers.delete(id); }
   }
 
   pauseTimer(id) {
@@ -175,10 +224,7 @@ class Store {
 
     if (s.autoReveal) {
       const delay = (s.questionEndAt - Date.now()) + 500;
-      if (delay > 0) {
-        const timer = setTimeout(() => this._autoReveal(id), delay);
-        this.timers.set(id, timer);
-      }
+      if (delay > 0) { const timer = setTimeout(() => this._autoReveal(id), delay); this.timers.set(id, timer); }
     }
     return s;
   }
@@ -188,7 +234,6 @@ class Store {
     if (!s) throw new Error('Sesi tidak ditemukan');
     this._clearTimer(id);
     if (s.questionState === 'revealed') return s;
-
     s.questionState = 'revealed';
     s.isPaused = false;
     
@@ -202,22 +247,15 @@ class Store {
         p.streak = ans.newStreak;
         p.maxStreak = Math.max(p.maxStreak || 0, p.streak);
         p.totalAnswers++;
-        if (ans.correct) {
-          p.correctCount++;
-          correctCount++;
-        } else if (s.eliminationMode && !p.isEliminated) {
-          p.isEliminated = true;
-        }
+        if (ans.correct) { p.correctCount++; correctCount++; }
+        else if (s.eliminationMode && !p.isEliminated) { p.isEliminated = true; }
       } else {
         s.currentAnswers.set(pid, { playerId: pid, choice: null, correct: false, points: 0, noAnswer: true });
         p.streak = 0;
         p.totalAnswers++;
-        if (s.eliminationMode && !p.isEliminated) {
-          p.isEliminated = true;
-        }
+        if (s.eliminationMode && !p.isEliminated) { p.isEliminated = true; }
       }
       
-      // FITUR BARU: Simpan history untuk review
       if (!p.history) p.history = [];
       const finalAns = s.currentAnswers.get(pid);
       p.history.push({
@@ -230,26 +268,19 @@ class Store {
         points: finalAns.points || 0,
         imageUrl: s.currentQ.imageUrl || null
       });
-      
       p.activeDouble = false;
     }
 
     const wrongCount = totalPlayers - correctCount;
-    s.questionStats[s.currentQuestionIndex] = {
-      index: s.currentQuestionIndex,
-      text: s.currentQ.text,
-      total: totalPlayers,
-      correct: correctCount,
-      wrong: wrongCount,
-      accuracy: totalPlayers > 0 ? Math.round((correctCount / totalPlayers) * 100) : 0
-    };
-
+    s.questionStats[s.currentQuestionIndex] = { index: s.currentQuestionIndex, text: s.currentQ.text, total: totalPlayers, correct: correctCount, wrong: wrongCount, accuracy: totalPlayers > 0 ? Math.round((correctCount / totalPlayers) * 100) : 0 };
     return s;
   }
+
   endSession(id) {
     const s = this.sessions.get(id);
     if (!s) throw new Error('Sesi tidak ditemukan');
     this._clearTimer(id);
+    s.isAutoPlaying = false;
     s.status = 'ended';
     s.endedAt = Date.now();
     return s;
@@ -263,9 +294,7 @@ class Store {
     if (s.tournamentMode) {
       const invite = s.invitationCodes.find(p => p.name.toLowerCase() === name.trim().toLowerCase() && p.code === code);
       if (!invite) throw new Error('Nama atau Kode Undangan tidak valid!');
-      if (Array.from(s.players.values()).some(p => p.name.toLowerCase() === name.trim().toLowerCase())) {
-        throw new Error('Nama ini sudah digunakan oleh peserta lain!');
-      }
+      if (Array.from(s.players.values()).some(p => p.name.toLowerCase() === name.trim().toLowerCase())) throw new Error('Nama ini sudah digunakan!');
     }
 
     let group = null;
@@ -273,25 +302,12 @@ class Store {
       const counts = {};
       s.groupNames.slice(0, s.groupCount).forEach(g => counts[g] = 0);
       Array.from(s.players.values()).forEach(p => { if (p.group) counts[p.group]++; });
-      
-      let minGroup = s.groupNames[0];
-      let minCount = Infinity;
-      Object.keys(counts).forEach(g => {
-        if (counts[g] < minCount) { minCount = counts[g]; minGroup = g; }
-      });
+      let minGroup = s.groupNames[0], minCount = Infinity;
+      Object.keys(counts).forEach(g => { if (counts[g] < minCount) { minCount = counts[g]; minGroup = g; } });
       group = minGroup;
     }
 
-    const player = {
-      id: 'p_' + nid(), name: (name || 'Anonim').trim().slice(0, 24) || 'Anonim',
-      score: 0, streak: 0, maxStreak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(),
-      online: true, group,
-      powerups: { fifty: 1, double: 1 },
-      activeDouble: false,
-      isEliminated: false,
-      isReady: false,
-      history: []
-    };
+    const player = { id: 'p_' + nid(), name: (name || 'Anonim').trim().slice(0, 24) || 'Anonim', score: 0, streak: 0, maxStreak: 0, correctCount: 0, totalAnswers: 0, joinedAt: Date.now(), online: true, group, powerups: { fifty: 1, double: 1 }, activeDouble: false, isEliminated: false, isReady: false, history: [] };
     s.players.set(player.id, player);
     return player;
   }
@@ -299,17 +315,11 @@ class Store {
     const s = this.sessions.get(sessionId);
     if (s && s.players.get(playerId)) s.players.get(playerId).online = online;
   }
-
   toggleReady(sessionId, playerId) {
     const s = this.sessions.get(sessionId);
-    if (s && s.players.has(playerId)) {
-      const p = s.players.get(playerId);
-      p.isReady = !p.isReady;
-      return s;
-    }
+    if (s && s.players.has(playerId)) { s.players.get(playerId).isReady = !s.players.get(playerId).isReady; return s; }
     return null;
   }
-
   kickPlayer(sessionId, playerId) {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Sesi tidak ditemukan');
@@ -317,13 +327,11 @@ class Store {
     s.currentAnswers.delete(playerId);
     return s;
   }
-
   usePowerup(sessionId, playerId, type) {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Sesi tidak ditemukan');
     const p = s.players.get(playerId);
     if (!p || p.isEliminated) throw new Error('Pemain tidak ditemukan atau sudah tereliminasi');
-    
     if (type === 'fifty') {
       if (p.powerups.fifty <= 0) throw new Error('Kuota 50:50 habis');
       p.powerups.fifty--;
@@ -331,17 +339,14 @@ class Store {
       wrongIndices.sort(() => Math.random() - 0.5);
       return { ok: true, hidden: wrongIndices.slice(0, 2) };
     } 
-    
     if (type === 'double') {
       if (p.powerups.double <= 0) throw new Error('Kuota Poin Ganda habis');
       p.powerups.double--;
       p.activeDouble = true;
       return { ok: true };
     }
-    
     throw new Error('Tipe power-up tidak valid');
   }
-
   submitAnswer(sessionId, playerId, choice) {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Sesi tidak ditemukan');
@@ -349,7 +354,6 @@ class Store {
     if (s.isPaused) throw new Error('Kuis sedang dijeda');
     if (Date.now() < s.questionStartAt) throw new Error('Soal belum dimulai');
     if (Date.now() > s.questionEndAt) throw new Error('Waktu habis');
-    
     const p = s.players.get(playerId);
     if (!p) throw new Error('Pemain tidak ditemukan');
     if (p.isEliminated) throw new Error('Anda sudah tereliminasi');
@@ -359,23 +363,12 @@ class Store {
     const timeUsed = Date.now() - s.questionStartAt;
     const timeLimit = s.questionEndAt - s.questionStartAt;
     const result = this._score({ correct, timeUsed, timeLimit, streak: p.streak });
-
     let finalPoints = result.points;
-    
     const isBossBattle = s.bossQuestions.includes(s.currentQuestionIndex);
-    if (correct && isBossBattle) {
-      finalPoints = finalPoints * 3;
-    }
+    if (correct && isBossBattle) finalPoints = finalPoints * 3;
+    if (p.activeDouble) finalPoints = finalPoints * 2;
 
-    if (p.activeDouble) {
-      finalPoints = finalPoints * 2;
-    }
-
-    s.currentAnswers.set(playerId, { 
-      playerId, choice, submittedAt: Date.now(), correct, 
-      points: finalPoints, newStreak: result.newStreak 
-    });
-
+    s.currentAnswers.set(playerId, { playerId, choice, submittedAt: Date.now(), correct, points: finalPoints, newStreak: result.newStreak });
     return { correct, points: finalPoints, newStreak: result.newStreak, totalScore: p.score };
   }
   _score({ correct, timeUsed, timeLimit, streak }) {
@@ -391,14 +384,8 @@ class Store {
     const bank = this.banks.get(s.bankId);
     const q = s.currentQ;
     const isBossBattle = s.bossQuestions.includes(s.currentQuestionIndex);
-
-    const leaderboard = Array.from(s.players.values())
-      .sort((a, b) => b.score - a.score).slice(0, 20)
-      .map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, score: p.score, streak: p.streak, group: p.group, isEliminated: p.isEliminated }));
-
-    const allPlayers = Array.from(s.players.values())
-      .map(p => ({ id: p.id, name: p.name, score: p.score, online: p.online, group: p.group, isEliminated: p.isEliminated, isReady: p.isReady }));
-
+    const leaderboard = Array.from(s.players.values()).sort((a, b) => b.score - a.score).slice(0, 20).map((p, i) => ({ rank: i + 1, id: p.id, name: p.name, score: p.score, streak: p.streak, group: p.group, isEliminated: p.isEliminated }));
+    const allPlayers = Array.from(s.players.values()).map(p => ({ id: p.id, name: p.name, score: p.score, online: p.online, group: p.group, isEliminated: p.isEliminated, isReady: p.isReady }));
     const answerStats = { total: 0, correct: 0, byChoice: [0, 0, 0, 0] };
     if (s.questionState !== 'idle') {
       for (const a of s.currentAnswers.values()) {
@@ -408,26 +395,21 @@ class Store {
       }
     }
     const revealCorrect = s.questionState === 'revealed' && q ? q.correctIndex : null;
-
     let groupScores = {};
     if (s.groupMode) {
       s.groupNames.slice(0, s.groupCount).forEach(g => groupScores[g] = 0);
-      for (const p of s.players.values()) {
-        if (p.group && groupScores[p.group] !== undefined) groupScores[p.group] += p.score;
-      }
+      for (const p of s.players.values()) { if (p.group && groupScores[p.group] !== undefined) groupScores[p.group] += p.score; }
     }
-
     return {
       session: {
         id: s.id, pin: s.pin, hostName: s.hostName, hostAvatar: s.hostAvatar, hostLogo: s.hostLogo, status: s.status,
         questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex,
         totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal,
         ttsEnabled: s.ttsEnabled, ttsSpeed: s.ttsSpeed,
+        autoPlay: s.autoPlay, isAutoPlaying: s.isAutoPlaying, autoPlayDelaySec: s.autoPlayDelaySec,
         groupMode: s.groupMode, groupCount: s.groupCount, groupNames: s.groupNames, groupScores: s.groupMode ? groupScores : null,
-        eliminationMode: s.eliminationMode,
-        tournamentMode: s.tournamentMode, expectedPlayers: s.expectedPlayers,
-        isPaused: s.isPaused, pauseStartAt: s.pauseStartAt,
-        isBossBattle: isBossBattle,
+        eliminationMode: s.eliminationMode, tournamentMode: s.tournamentMode, expectedPlayers: s.expectedPlayers,
+        isPaused: s.isPaused, pauseStartAt: s.pauseStartAt, isBossBattle,
         hasAiReview: !!s.aiConfig,
         questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now(),
       },
@@ -440,71 +422,37 @@ class Store {
     if (!s) return null;
     const p = s.players.get(playerId);
     if (!p) return null;
-    return {
-      player: { id: p.id, name: p.name, score: p.score, streak: p.streak, group: p.group, powerups: p.powerups, activeDouble: p.activeDouble, isEliminated: p.isEliminated, isReady: p.isReady },
-      myAnswer: s.currentAnswers.get(playerId) || null,
-    };
+    return { player: { id: p.id, name: p.name, score: p.score, streak: p.streak, group: p.group, powerups: p.powerups, activeDouble: p.activeDouble, isEliminated: p.isEliminated, isReady: p.isReady }, myAnswer: s.currentAnswers.get(playerId) || null };
   }
   getPlayerReview(sessionId, playerId) {
     const s = this.sessions.get(sessionId);
     if (!s) return null;
     const p = s.players.get(playerId);
     if (!p) return null;
-    return {
-      history: p.history || [],
-      aiConfig: s.aiConfig, // Dikirim ke client untuk AI explanation
-      bankName: this.banks.get(s.bankId)?.name,
-      hostName: s.hostName,
-      hostAvatar: s.hostAvatar
-    };
+    return { history: p.history || [], aiConfig: s.aiConfig, bankName: this.banks.get(s.bankId)?.name, hostName: s.hostName, hostAvatar: s.hostAvatar };
   }
   getReport(sessionId) {
     const s = this.sessions.get(sessionId);
     if (!s) return null;
     const bank = this.banks.get(s.bankId);
-    
     const sortedPlayers = Array.from(s.players.values()).sort((a, b) => b.score - a.score);
-    
     const playersWithBadges = sortedPlayers.map((p, index) => {
       const badges = [];
       if (index === 0) badges.push({ icon: '🥇', label: 'Juara 1' });
       else if (index === 1) badges.push({ icon: '🥈', label: 'Juara 2' });
       else if (index === 2) badges.push({ icon: '🥉', label: 'Juara 3' });
-
-      if (p.totalAnswers > 0 && p.correctCount === p.totalAnswers) {
-        badges.push({ icon: '🎯', label: 'Sniper (100%)' });
-      }
-      if (p.maxStreak >= 3) {
-        badges.push({ icon: '🔥', label: `Streak ${p.maxStreak}x` });
-      }
-
-      return {
-        id: p.id, name: p.name, score: p.score, correct: p.correctCount, total: p.totalAnswers,
-        accuracy: p.totalAnswers ? Math.round((p.correctCount / p.totalAnswers) * 100) : 0,
-        group: p.group, badges, isEliminated: p.isEliminated
-      };
+      if (p.totalAnswers > 0 && p.correctCount === p.totalAnswers) badges.push({ icon: '🎯', label: 'Sniper (100%)' });
+      if (p.maxStreak >= 3) badges.push({ icon: '🔥', label: `Streak ${p.maxStreak}x` });
+      return { id: p.id, name: p.name, score: p.score, correct: p.correctCount, total: p.totalAnswers, accuracy: p.totalAnswers ? Math.round((p.correctCount / p.totalAnswers) * 100) : 0, group: p.group, badges, isEliminated: p.isEliminated };
     });
-
     let groupScores = {};
     if (s.groupMode) {
       s.groupNames.slice(0, s.groupCount).forEach(g => groupScores[g] = 0);
-      for (const p of sortedPlayers) {
-        if (p.group && groupScores[p.group] !== undefined) groupScores[p.group] += p.score;
-      }
+      for (const p of sortedPlayers) { if (p.group && groupScores[p.group] !== undefined) groupScores[p.group] += p.score; }
     }
-
     const validStats = s.questionStats.filter(Boolean);
-    const hardestQuestions = [...validStats]
-      .sort((a, b) => b.wrong - a.wrong)
-      .slice(0, 3)
-      .filter(q => q.wrong > 0);
-
-    return {
-      sessionId: s.id, pin: s.pin, hostName: s.hostName, bankName: bank.name,
-      totalQuestions: bank.questions.length, startedAt: s.createdAt, endedAt: s.endedAt,
-      groupMode: s.groupMode, groupScores: s.groupMode ? groupScores : null,
-      players: playersWithBadges, hardestQuestions,
-    };
+    const hardestQuestions = [...validStats].sort((a, b) => b.wrong - a.wrong).slice(0, 3).filter(q => q.wrong > 0);
+    return { sessionId: s.id, pin: s.pin, hostName: s.hostName, bankName: bank.name, totalQuestions: bank.questions.length, startedAt: s.createdAt, endedAt: s.endedAt, groupMode: s.groupMode, groupScores: s.groupMode ? groupScores : null, players: playersWithBadges, hardestQuestions };
   }
 }
 

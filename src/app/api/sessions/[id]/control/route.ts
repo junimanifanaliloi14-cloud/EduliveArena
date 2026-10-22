@@ -11,17 +11,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     else if (action === 'end') store.endSession(id);
     else if (action === 'pause') store.pauseTimer(id);
     else if (action === 'resume') store.resumeTimer(id);
+    else if (action === 'stop-autoplay') store.stopAutoPlay(id);
     else return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 
     const io = (globalThis as any).__IO__;
     if (io) {
       io.to('session:' + id).emit('session:state', store.getPublicState(id));
-      
       if (action === 'end') {
         const report = store.getReport(id);
         io.to('session:' + id).emit('session:ended', report);
-        
-        // Kirim review personal ke setiap murid
         const session = store.getSession(id);
         if (session) {
           for (const pid of session.players.keys()) {

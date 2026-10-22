@@ -3,19 +3,8 @@ import { store } from '@/lib/store.mjs';
 
 export async function POST(req: Request) {
   try {
-    const { 
-      bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal, ttsEnabled, ttsSpeed,
-      groupMode, groupCount, groupNames, 
-      eliminationMode, bossQuestions, shuffleOptions, 
-      tournamentMode, expectedPlayers, invitationCodes, aiConfig
-    } = await req.json();
-    
-    const session = store.createSession({ 
-      bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal, ttsEnabled, ttsSpeed,
-      groupMode, groupCount, groupNames, 
-      eliminationMode, bossQuestions, shuffleOptions, 
-      tournamentMode, expectedPlayers, invitationCodes, aiConfig
-    });
+    const data = await req.json();
+    const session = store.createSession(data);
     return NextResponse.json({ session: { id: session.id, pin: session.pin } });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
