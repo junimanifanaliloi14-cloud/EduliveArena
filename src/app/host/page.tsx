@@ -10,6 +10,8 @@ interface Bank {
   questions?: { id: string; text: string }[];
 }
 
+const AVATAR_OPTIONS = ['👩‍🏫', '👨‍🏫', '🦸‍♀️', '🦸‍♂️', '🧙‍♂️', '🧙‍♀️', '🐯', '🦊', '🤖', '👽'];
+
 export default function HostHome() {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [selected, setSelected] = useState('');
@@ -17,6 +19,8 @@ export default function HostHome() {
   
   // State Pengaturan
   const [hostName, setHostName] = useState('Bu Guru');
+  const [hostAvatar, setHostAvatar] = useState('👩‍🏫');
+  const [hostLogo, setHostLogo] = useState('');
   const [timeLimit, setTimeLimit] = useState(20);
   const [autoReveal, setAutoReveal] = useState(true);
   const [groupMode, setGroupMode] = useState(false);
@@ -45,6 +49,8 @@ export default function HostHome() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.hostName) setHostName(parsed.hostName);
+        if (parsed.hostAvatar) setHostAvatar(parsed.hostAvatar);
+        if (parsed.hostLogo !== undefined) setHostLogo(parsed.hostLogo);
         if (parsed.timeLimit) setTimeLimit(parsed.timeLimit);
         if (parsed.autoReveal !== undefined) setAutoReveal(parsed.autoReveal);
         if (parsed.groupMode !== undefined) setGroupMode(parsed.groupMode);
@@ -59,9 +65,9 @@ export default function HostHome() {
   }, []);
 
   useEffect(() => {
-    const settings = { hostName, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode };
+    const settings = { hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode };
     localStorage.setItem('edulive_teacher_settings', JSON.stringify(settings));
-  }, [hostName, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode]);
+  }, [hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode]);
 
   function fetchBanks() {
     fetch('/api/banks').then(r => r.json()).then(d => {
@@ -94,7 +100,7 @@ export default function HostHome() {
     const res = await fetch('/api/sessions', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        bankId: selected, hostName, timeLimitSec: timeLimit, autoReveal, 
+        bankId: selected, hostName, hostAvatar, hostLogo, timeLimitSec: timeLimit, autoReveal, 
         groupMode, groupCount, groupNames, eliminationMode, bossQuestions, shuffleOptions,
         tournamentMode, expectedPlayers: generatedCodes.length, invitationCodes: generatedCodes 
       }),
@@ -231,11 +237,38 @@ export default function HostHome() {
       )}
 
       <div className="card mt-8 space-y-5">
-        <div>
-          <label className="block text-sm text-slate-400 mb-2">Nama tampilan guru</label>
-          <input value={hostName} onChange={e => setHostName(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 outline-none focus:border-brand-500" />
-        </div>
         
+        {/* BRANDING GURU */}
+        <div className="bg-slate-800/50 p-4 rounded-xl border border-white/10">
+          <h3 className="font-semibold text-brand-400 mb-3 text-sm">Identitas Guru & Sekolah</h3>
+          
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">Nama tampilan guru</label>
+              <input value={hostName} onChange={e => setHostName(e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-2">URL Logo Sekolah/Komunitas (Opsional)</label>
+              <input value={hostLogo} onChange={e => setHostLogo(e.target.value)} placeholder="https://..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 outline-none focus:border-brand-500 text-sm" />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm text-slate-400 mb-2">Pilih Avatar Guru</label>
+            <div className="flex flex-wrap gap-2">
+              {AVATAR_OPTIONS.map(emoji => (
+                <button 
+                  key={emoji} 
+                  onClick={() => setHostAvatar(emoji)}
+                  className={`text-3xl p-2 rounded-xl transition-all ${hostAvatar === emoji ? 'bg-brand-500/30 border-2 border-brand-500 scale-110' : 'bg-white/5 border border-white/10 hover:bg-white/10'}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-slate-400 mb-2">Durasi Default</label>

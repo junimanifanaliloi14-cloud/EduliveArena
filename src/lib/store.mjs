@@ -43,12 +43,15 @@ class Store {
   }
   deleteBank(id) { this.banks.delete(id); }
 
-  createSession({ bankId, hostName, timeLimitSec, autoReveal = true, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [] }) {
+  createSession({ bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal = true, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [] }) {
     const bank = this.banks.get(bankId);
     if (!bank) throw new Error('Bank tidak ditemukan');
     const session = {
       id: 'sess_' + nid(), pin: this._genPin(), bankId,
-      hostName: hostName || 'Guru', status: 'lobby',
+      hostName: hostName || 'Guru', 
+      hostAvatar: hostAvatar || '👩‍🏫',
+      hostLogo: hostLogo || null,
+      status: 'lobby',
       timeLimitSec: timeLimitSec || 20,
       autoReveal: autoReveal,
       groupMode: groupMode,
@@ -253,7 +256,6 @@ class Store {
       s.groupNames.slice(0, s.groupCount).forEach(g => counts[g] = 0);
       Array.from(s.players.values()).forEach(p => { if (p.group) counts[p.group]++; });
       
-      // Cari grup dengan anggota paling sedikit
       let minGroup = s.groupNames[0];
       let minCount = Infinity;
       Object.keys(counts).forEach(g => {
@@ -398,7 +400,7 @@ class Store {
 
     return {
       session: {
-        id: s.id, pin: s.pin, hostName: s.hostName, status: s.status,
+        id: s.id, pin: s.pin, hostName: s.hostName, hostAvatar: s.hostAvatar, hostLogo: s.hostLogo, status: s.status,
         questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex,
         totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal,
         groupMode: s.groupMode, groupCount: s.groupCount, groupNames: s.groupNames, groupScores: s.groupMode ? groupScores : null,

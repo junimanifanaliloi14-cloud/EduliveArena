@@ -318,18 +318,25 @@ export default function Overlay({ params }: { params: Promise<{ id: string }> })
         <div className="max-w-6xl mx-auto grid grid-cols-3 gap-5 relative z-10">
           <div className="col-span-2 card min-h-[380px] flex flex-row relative overflow-hidden">
             
-            <div className="w-24 flex flex-col items-center justify-start pt-6 border-r border-white/10 pr-4 mr-4">
-              <div className="relative">
+            <div className="w-24 flex flex-col items-center justify-start pt-6 border-r border-white/10 pr-4 mr-4 relative">
+              
+              {/* LOGO SEKOLAH (Jika ada) */}
+              {s.hostLogo && (
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 w-20 h-12 flex items-center justify-center opacity-70">
+                  <img src={getOptimizedImageUrl(s.hostLogo) || ''} alt="Logo" className="max-h-full max-w-full object-contain" />
+                </div>
+              )}
+
+              <div className="relative mt-8">
                 <div className={`absolute -inset-1 rounded-full blur opacity-75 animate-pulse ${s.isBossBattle ? 'bg-gradient-to-r from-red-600 to-orange-500' : 'bg-gradient-to-r from-brand-500 to-amber-500'}`}></div>
                 <motion.div animate={avatarAnim} className="relative h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl border-2 border-white/20">
-                  {s.isBossBattle ? '😈' : '👩‍🏫'}
+                  {s.isBossBattle ? '😈' : (s.hostAvatar || '👩‍🏫')}
                 </motion.div>
               </div>
               <div className="text-[10px] text-center text-slate-400 mt-3 uppercase tracking-widest font-bold">{s.isBossBattle ? 'BOSS' : 'Guru'}</div>
             </div>
 
             <div className="flex-1 flex flex-col">
-              {/* PAPAN SKOR GRUP DINAMIS */}
               {s.groupMode && s.groupScores && (
                 <div className="flex gap-2 mb-4 bg-slate-800/80 p-2 rounded-xl border border-white/10 shadow-lg animate-slide-up flex-wrap">
                   {s.groupNames.slice(0, s.groupCount).map((name, i) => {

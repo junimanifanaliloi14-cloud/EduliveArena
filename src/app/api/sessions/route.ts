@@ -4,14 +4,14 @@ import { store } from '@/lib/store.mjs';
 export async function POST(req: Request) {
   try {
     const { 
-      bankId, hostName, timeLimitSec, autoReveal, 
+      bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal, 
       groupMode, groupCount, groupNames, 
       eliminationMode, bossQuestions, shuffleOptions, 
       tournamentMode, expectedPlayers, invitationCodes 
     } = await req.json();
     
     const session = store.createSession({ 
-      bankId, hostName, timeLimitSec, autoReveal, 
+      bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal, 
       groupMode, groupCount, groupNames, 
       eliminationMode, bossQuestions, shuffleOptions, 
       tournamentMode, expectedPlayers, invitationCodes 
