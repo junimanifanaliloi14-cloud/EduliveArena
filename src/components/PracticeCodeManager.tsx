@@ -42,10 +42,15 @@ export function PracticeCodeManager() {
   }
 
   async function deleteCode(code: string, bankName: string) {
-    if (!confirm(`Hapus kode latihan untuk "${bankName}"?\nSiswa tidak akan bisa lagi menggunakan kode ${code}.`)) return;
-    const res = await fetch('/api/practice/' + code, { method: 'DELETE' });
-    if (res.ok) fetchCodes();
-  }
+  if (!confirm(
+    `⚠️ Hapus kode latihan "${code}" untuk "${bankName}"?\n\n` +
+    `Siswa yang sedang latihan dengan kode ini akan mendapat pesan error saat refresh.\n` +
+    `Siswa tidak akan bisa lagi menggunakan kode ini.\n\n` +
+    `Lanjutkan?`
+  )) return;
+  const res = await fetch('/api/practice/' + code, { method: 'DELETE' });
+  if (res.ok) fetchCodes();
+}
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text).then(() => {
