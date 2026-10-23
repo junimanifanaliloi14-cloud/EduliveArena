@@ -213,6 +213,7 @@ export default function HostHome() {
       <div className="mb-6 flex justify-between items-center flex-wrap gap-2">
         <Link href="/" className="text-sm text-slate-400 hover:text-white transition">← Kembali ke Beranda</Link>
         <div className="flex gap-3 items-center flex-wrap">
+          <Link href="/host/analytics" className="text-sm text-cyan-300 hover:text-cyan-200 font-semibold">📊 Analytics</Link>
           <Link href="/host/backup" className="text-sm text-emerald-300 hover:text-emerald-200 font-semibold">🛡️ Backup</Link>
           <Link href="/host/hall-of-fame" className="text-sm text-amber-300 hover:text-amber-200 font-semibold">🏆 Hall of Fame</Link>
           <Link href="/host/history" className="text-sm text-slate-300 hover:text-white font-semibold">📚 Riwayat</Link>
