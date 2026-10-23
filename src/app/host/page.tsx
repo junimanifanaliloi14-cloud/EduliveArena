@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { THEMES, ThemeId } from '@/lib/themes';
 
 interface Bank { 
   id: string; name: string; subject: string; questionCount: number;
@@ -18,6 +19,7 @@ export default function HostHome() {
   const [hostName, setHostName] = useState('Bu Guru');
   const [hostAvatar, setHostAvatar] = useState('👩‍🏫');
   const [hostLogo, setHostLogo] = useState('');
+  const [theme, setTheme] = useState<ThemeId>('classic');
   const [timeLimit, setTimeLimit] = useState(20);
   const [autoReveal, setAutoReveal] = useState(true);
   const [groupMode, setGroupMode] = useState(false);
@@ -50,7 +52,6 @@ export default function HostHome() {
   const [parsedQuestions, setParsedQuestions] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Editor State
   const [editingBank, setEditingBank] = useState<Bank | null>(null);
   const [savingBank, setSavingBank] = useState(false);
 
@@ -62,6 +63,7 @@ export default function HostHome() {
         if (parsed.hostName) setHostName(parsed.hostName);
         if (parsed.hostAvatar) setHostAvatar(parsed.hostAvatar);
         if (parsed.hostLogo !== undefined) setHostLogo(parsed.hostLogo);
+        if (parsed.theme) setTheme(parsed.theme);
         if (parsed.timeLimit) setTimeLimit(parsed.timeLimit);
         if (parsed.autoReveal !== undefined) setAutoReveal(parsed.autoReveal);
         if (parsed.groupMode !== undefined) setGroupMode(parsed.groupMode);
@@ -81,9 +83,9 @@ export default function HostHome() {
   }, [aiProvider]);
 
   useEffect(() => {
-    const settings = { hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode, aiReviewEnabled, autoPlay, autoPlayDelaySec };
+    const settings = { hostName, hostAvatar, hostLogo, theme, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode, aiReviewEnabled, autoPlay, autoPlayDelaySec };
     localStorage.setItem('edulive_teacher_settings', JSON.stringify(settings));
-  }, [hostName, hostAvatar, hostLogo, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode, aiReviewEnabled, autoPlay, autoPlayDelaySec]);
+  }, [hostName, hostAvatar, hostLogo, theme, timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, shuffleOptions, tournamentMode, aiReviewEnabled, autoPlay, autoPlayDelaySec]);
 
   useEffect(() => { if (aiApiKey) localStorage.setItem(`edulive_ai_key_${aiProvider}`, aiApiKey); }, [aiApiKey, aiProvider]);
 
@@ -94,51 +96,21 @@ export default function HostHome() {
     });
   }
 
-  // =============== EDITOR FUNCTIONS ===============
-  function openEditor(bank: Bank) {
-    setEditingBank(JSON.parse(JSON.stringify(bank)));
-  }
-  function closeEditor() {
-    if (!confirm('Batalkan perubahan? Data yang belum disimpan akan hilang.')) return;
-    setEditingBank(null);
-  }
-  function updateBankMeta(field: 'name' | 'subject', value: string) {
-    setEditingBank(prev => prev ? { ...prev, [field]: value } : prev);
-  }
+  function openEditor(bank: Bank) { setEditingBank(JSON.parse(JSON.stringify(bank))); }
+  function closeEditor() { if (!confirm('Batalkan perubahan?')) return; setEditingBank(null); }
+  function updateBankMeta(field: 'name' | 'subject', value: string) { setEditingBank(prev => prev ? { ...prev, [field]: value } : prev); }
   function updateQuestionField(qIdx: number, field: string, value: any) {
-    setEditingBank(prev => {
-      if (!prev || !prev.questions) return prev;
-      const newQs = [...prev.questions];
-      newQs[qIdx] = { ...newQs[qIdx], [field]: value };
-      return { ...prev, questions: newQs };
-    });
+    setEditingBank(prev => { if (!prev || !prev.questions) return prev; const newQs = [...prev.questions]; newQs[qIdx] = { ...newQs[qIdx], [field]: value }; return { ...prev, questions: newQs }; });
   }
   function updateOptionField(qIdx: number, optIdx: number, value: string) {
-    setEditingBank(prev => {
-      if (!prev || !prev.questions) return prev;
-      const newQs = [...prev.questions];
-      const newOpts = [...newQs[qIdx].options];
-      newOpts[optIdx] = value;
-      newQs[qIdx] = { ...newQs[qIdx], options: newOpts };
-      return { ...prev, questions: newQs };
-    });
+    setEditingBank(prev => { if (!prev || !prev.questions) return prev; const newQs = [...prev.questions]; const newOpts = [...newQs[qIdx].options]; newOpts[optIdx] = value; newQs[qIdx] = { ...newQs[qIdx], options: newOpts }; return { ...prev, questions: newQs }; });
   }
   function addQuestionToEditor() {
-    setEditingBank(prev => {
-      if (!prev) return prev;
-      const newQ = {
-        id: 'q_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
-        text: '', options: ['', '', '', ''], correctIndex: 0, timeLimitSec: 20, imageUrl: null
-      };
-      return { ...prev, questions: [...(prev.questions || []), newQ] };
-    });
+    setEditingBank(prev => { if (!prev) return prev; const newQ = { id: 'q_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5), text: '', options: ['', '', '', ''], correctIndex: 0, timeLimitSec: 20, imageUrl: null }; return { ...prev, questions: [...(prev.questions || []), newQ] }; });
   }
   function deleteQuestionFromEditor(qIdx: number) {
     if (!confirm(`Hapus soal nomor ${qIdx + 1}?`)) return;
-    setEditingBank(prev => {
-      if (!prev) return prev;
-      return { ...prev, questions: prev.questions?.filter((_, i) => i !== qIdx) || [] };
-    });
+    setEditingBank(prev => { if (!prev) return prev; return { ...prev, questions: prev.questions?.filter((_, i) => i !== qIdx) || [] }; });
   }
   async function saveEditedBank() {
     if (!editingBank) return;
@@ -150,161 +122,88 @@ export default function HostHome() {
       if (q.options.some((o: string) => !o.trim())) { alert(`Ada opsi yang kosong di soal nomor ${i + 1}.`); return; }
     }
     setSavingBank(true);
-    const res = await fetch('/api/banks/' + editingBank.id, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editingBank.name, subject: editingBank.subject, questions: editingBank.questions }),
-    });
-    if (res.ok) {
-      setEditingBank(null);
-      fetchBanks();
-      alert('✅ Bank soal berhasil diperbarui!');
-    } else {
-      alert('❌ Gagal menyimpan perubahan.');
-    }
+    const res = await fetch('/api/banks/' + editingBank.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: editingBank.name, subject: editingBank.subject, questions: editingBank.questions }) });
+    if (res.ok) { setEditingBank(null); fetchBanks(); alert('✅ Bank soal berhasil diperbarui!'); }
+    else alert('❌ Gagal menyimpan perubahan.');
     setSavingBank(false);
   }
-  // =============== END EDITOR FUNCTIONS ===============
 
   async function callAIGenerate(prompt: string): Promise<string> {
     const { callAI } = await import('@/lib/aiHelper');
     return callAI(prompt, { provider: aiProvider, apiKey: aiApiKey });
   }
-
   async function generateWithAI() {
     if (!aiApiKey.trim()) { alert(`Masukkan API Key ${aiProvider} terlebih dahulu.`); return; }
     if (aiMode === 'material' && !aiMaterial.trim()) { alert('Masukkan materi pelajaran.'); return; }
     if (aiMode === 'topic' && !aiTopic.trim()) { alert('Masukkan topik pelajaran.'); return; }
     setAiGenerating(true); setAiGenerated([]); setAiProgress(0);
     try {
-      const BATCH_SIZE = 10;
-      const totalBatches = Math.ceil(aiNumQuestions / BATCH_SIZE);
-      let allQuestions: any[] = [];
+      const BATCH_SIZE = 10; const totalBatches = Math.ceil(aiNumQuestions / BATCH_SIZE); let allQuestions: any[] = [];
       for (let i = 0; i < totalBatches; i++) {
-        const remaining = aiNumQuestions - allQuestions.length;
-        const batchCount = Math.min(BATCH_SIZE, remaining);
-        let prompt = '';
-        if (aiMode === 'material') {
-          prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda berkualitas tentang materi berikut:\n\n"${aiMaterial}"\n\nAturan:\n- 4 pilihan jawaban, 1 benar\n- Kesulitan: ${aiDifficulty}\n- Bahasa Indonesia\n- Kembalikan HANYA JSON array valid\nFormat:\n[{"text":"...","options":["A","B","C","D"],"correctIndex":0,"timeLimitSec":20}]`;
-        } else {
-          prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda tentang topik: "${aiTopic}".\n\nAturan:\n- 4 pilihan jawaban, 1 benar\n- Kesulitan: ${aiDifficulty}\n- Bahasa Indonesia\n- Kembalikan HANYA JSON array valid\nFormat:\n[{"text":"...","options":["A","B","C","D"],"correctIndex":0,"timeLimitSec":20}]`;
-        }
-        const rawText = await callAIGenerate(prompt);
-        const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleanJson);
-        if (Array.isArray(parsed)) {
-          const formatted = parsed.map((q: any, idx: number) => ({ id: `ai_q_${Date.now()}_${i}_${idx}`, text: q.text || 'Soal', options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['-', '-', '-', '-'], correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0, timeLimitSec: q.timeLimitSec || 20, imageUrl: null }));
-          allQuestions = [...allQuestions, ...formatted];
-        }
+        const remaining = aiNumQuestions - allQuestions.length; const batchCount = Math.min(BATCH_SIZE, remaining); let prompt = '';
+        if (aiMode === 'material') { prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda berkualitas tentang materi berikut:\n\n"${aiMaterial}"\n\nAturan:\n- 4 pilihan jawaban, 1 benar\n- Kesulitan: ${aiDifficulty}\n- Bahasa Indonesia\n- Kembalikan HANYA JSON array valid\nFormat:\n[{"text":"...","options":["A","B","C","D"],"correctIndex":0,"timeLimitSec":20}]`; }
+        else { prompt = `Anda adalah guru ahli. Buatkan ${batchCount} soal pilihan ganda tentang topik: "${aiTopic}".\n\nAturan:\n- 4 pilihan jawaban, 1 benar\n- Kesulitan: ${aiDifficulty}\n- Bahasa Indonesia\n- Kembalikan HANYA JSON array valid\nFormat:\n[{"text":"...","options":["A","B","C","D"],"correctIndex":0,"timeLimitSec":20}]`; }
+        const rawText = await callAIGenerate(prompt); const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim(); const parsed = JSON.parse(cleanJson);
+        if (Array.isArray(parsed)) { const formatted = parsed.map((q: any, idx: number) => ({ id: `ai_q_${Date.now()}_${i}_${idx}`, text: q.text || 'Soal', options: Array.isArray(q.options) && q.options.length === 4 ? q.options : ['-', '-', '-', '-'], correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0, timeLimitSec: q.timeLimitSec || 20, imageUrl: null })); allQuestions = [...allQuestions, ...formatted]; }
         setAiProgress(Math.round(((i + 1) / totalBatches) * 100));
       }
-      if (allQuestions.length === 0) throw new Error('AI tidak mengembalikan soal valid.');
-      setAiGenerated(allQuestions);
+      if (allQuestions.length === 0) throw new Error('AI tidak mengembalikan soal valid.'); setAiGenerated(allQuestions);
     } catch (e: any) { alert('Error: ' + e.message); }
     setAiGenerating(false);
   }
-
   async function saveAIGenerated() {
-    if (aiGenerated.length === 0) return;
-    setLoading(true);
+    if (aiGenerated.length === 0) return; setLoading(true);
     const bankName = aiMode === 'material' ? ('AI: ' + aiMaterial.slice(0, 40)) : ('AI: ' + aiTopic);
     const res = await fetch('/api/banks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: bankName, subject: 'Umum', questions: aiGenerated }) });
-    if (res.ok) { setShowAi(false); setAiGenerated([]); setAiMaterial(''); setAiTopic(''); fetchBanks(); alert('Bank soal AI tersimpan!'); }
-    else alert('Gagal menyimpan.');
-    setLoading(false);
+    if (res.ok) { setShowAi(false); setAiGenerated([]); setAiMaterial(''); setAiTopic(''); fetchBanks(); alert('Bank soal AI tersimpan!'); } else alert('Gagal menyimpan.'); setLoading(false);
   }
-
   function generateCodes() {
-    const names = namesInput.split('\n').map(n => n.trim()).filter(n => n);
-    if (names.length === 0) { alert('Masukkan minimal 1 nama.'); return; }
-    const codes = names.map(name => { const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase(); return { name, code: `${name.split(' ')[0].toUpperCase()}-${randomStr}` }; });
-    setGeneratedCodes(codes);
+    const names = namesInput.split('\n').map(n => n.trim()).filter(n => n); if (names.length === 0) { alert('Masukkan minimal 1 nama.'); return; }
+    const codes = names.map(name => { const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase(); return { name, code: `${name.split(' ')[0].toUpperCase()}-${randomStr}` }; }); setGeneratedCodes(codes);
   }
-
   async function createSession() {
     if (!selected) return;
     if (tournamentMode && generatedCodes.length === 0) { alert('Generate kode undangan dulu.'); return; }
     if (aiReviewEnabled && !aiApiKey.trim()) { alert('Aktifkan AI Review membutuhkan API Key.'); return; }
     setLoading(true);
     const aiConfig = aiReviewEnabled ? { provider: aiProvider, apiKey: aiApiKey } : null;
-    const res = await fetch('/api/sessions', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bankId: selected, hostName, hostAvatar, hostLogo, timeLimitSec: timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, bossQuestions, shuffleOptions, tournamentMode, expectedPlayers: generatedCodes.length, invitationCodes: generatedCodes, aiConfig, autoPlay, autoPlayDelaySec }),
-    });
+    const res = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bankId: selected, hostName, hostAvatar, hostLogo, theme, timeLimitSec: timeLimit, autoReveal, groupMode, groupCount, groupNames, eliminationMode, bossQuestions, shuffleOptions, tournamentMode, expectedPlayers: generatedCodes.length, invitationCodes: generatedCodes, aiConfig, autoPlay, autoPlayDelaySec }) });
     const data = await res.json();
     if (data.session) {
       if (tournamentMode) {
         const origin = window.location.origin;
         const exportData = generatedCodes.map((c, i) => { const magicLink = `${origin}/play/${data.session.pin}?name=${encodeURIComponent(c.name)}&code=${c.code}`; const waText = `Halo ${c.name}, selamat datang di turnamen kuis! Silakan klik link ini: ${magicLink}`; return { No: i + 1, Nama: c.name, 'Kode Undangan': c.code, 'Magic Link': magicLink, 'Link WhatsApp': `https://wa.me/?text=${encodeURIComponent(waText)}` }; });
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Peserta_Turnamen");
-        XLSX.writeFile(wb, `Turnamen_${hostName}_PIN_${data.session.pin}.xlsx`);
+        const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Peserta_Turnamen"); XLSX.writeFile(wb, `Turnamen_${hostName}_PIN_${data.session.pin}.xlsx`);
       }
       router.push('/host/session/' + data.session.id);
-    }
-    else setLoading(false);
+    } else setLoading(false);
   }
-
-  async function deleteBank(bankId: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!confirm('Hapus bank soal ini?')) return;
-    const res = await fetch('/api/banks/' + bankId, { method: 'DELETE' });
-    if (res.ok) fetchBanks();
-  }
-
-  function toggleBossQuestion(index: number) {
-    setBossQuestions(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
-  }
-
+  async function deleteBank(bankId: string, e: React.MouseEvent) { e.stopPropagation(); if (!confirm('Hapus bank soal ini?')) return; const res = await fetch('/api/banks/' + bankId, { method: 'DELETE' }); if (res.ok) fetchBanks(); }
+  function toggleBossQuestion(index: number) { setBossQuestions(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); }
   function downloadTemplate() {
     const templateData = [{ soal: 'Berapakah hasil 2+2?', opsi_a: '3', opsi_b: '4', opsi_c: '5', opsi_d: '6', jawaban: 'B', gambar_url: '', waktu: 20 }];
-    const ws = XLSX.utils.json_to_sheet(templateData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template_Soal");
-    XLSX.writeFile(wb, "Template_Import_Soal.xlsx");
+    const ws = XLSX.utils.json_to_sheet(templateData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template_Soal"); XLSX.writeFile(wb, "Template_Import_Soal.xlsx");
   }
-
   function processQuestions(rawData: any[]) {
     const questions = rawData.map((row: any, index: number) => {
-      const normalizedRow: any = {};
-      Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().replace(/\s+/g, '_')] = row[k]; });
-      const answerStr = (normalizedRow.jawaban || 'A').toString().toUpperCase();
-      const correctMap: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
-      const questionTime = parseInt(normalizedRow.waktu) || 20;
+      const normalizedRow: any = {}; Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().replace(/\s+/g, '_')] = row[k]; });
+      const answerStr = (normalizedRow.jawaban || 'A').toString().toUpperCase(); const correctMap: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 }; const questionTime = parseInt(normalizedRow.waktu) || 20;
       return { id: 'q_' + (index + 1), text: normalizedRow.soal || 'Soal tanpa teks', options: [normalizedRow.opsi_a || '-', normalizedRow.opsi_b || '-', normalizedRow.opsi_c || '-', normalizedRow.opsi_d || '-'], correctIndex: correctMap[answerStr] !== undefined ? correctMap[answerStr] : 0, timeLimitSec: questionTime, imageUrl: normalizedRow.gambar_url || normalizedRow.gambar || null };
     }).filter(q => q.text !== 'Soal tanpa teks');
-    if (questions.length === 0) { alert('File kosong.'); return; }
-    setParsedQuestions(questions);
-    if (!newBankName) setNewBankName('Bank Soal Import - ' + new Date().toLocaleDateString());
+    if (questions.length === 0) { alert('File kosong.'); return; } setParsedQuestions(questions); if (!newBankName) setNewBankName('Bank Soal Import - ' + new Date().toLocaleDateString());
   }
-
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const file = e.target.files?.[0]; if (!file) return;
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-    if (isExcel) {
-      const reader = new FileReader();
-      reader.onload = (evt) => { const wb = XLSX.read(evt.target?.result, { type: 'binary' }); processQuestions(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])); };
-      reader.readAsBinaryString(file);
-    } else {
-      Papa.parse(file, { header: true, skipEmptyLines: true, complete: (r) => processQuestions(r.data), error: (e) => alert(e.message) });
-    }
+    if (isExcel) { const reader = new FileReader(); reader.onload = (evt) => { const wb = XLSX.read(evt.target?.result, { type: 'binary' }); processQuestions(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])); }; reader.readAsBinaryString(file); }
+    else { Papa.parse(file, { header: true, skipEmptyLines: true, complete: (r) => processQuestions(r.data), error: (e) => alert(e.message) }); }
   }
-
   async function saveImportedBank() {
-    if (parsedQuestions.length === 0 || !newBankName.trim()) return;
-    setLoading(true);
+    if (parsedQuestions.length === 0 || !newBankName.trim()) return; setLoading(true);
     const res = await fetch('/api/banks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newBankName, subject: 'Umum', questions: parsedQuestions }) });
-    if (res.ok) { setIsImporting(false); setParsedQuestions([]); setNewBankName(''); if (fileInputRef.current) fileInputRef.current.value = ''; fetchBanks(); alert('Bank soal tersimpan!'); }
-    else alert('Gagal menyimpan.');
-    setLoading(false);
+    if (res.ok) { setIsImporting(false); setParsedQuestions([]); setNewBankName(''); if (fileInputRef.current) fileInputRef.current.value = ''; fetchBanks(); alert('Bank soal tersimpan!'); } else alert('Gagal menyimpan.'); setLoading(false);
   }
-
-  function updateGroupName(index: number, value: string) {
-    const newNames = [...groupNames];
-    newNames[index] = value;
-    setGroupNames(newNames);
-  }
+  function updateGroupName(index: number, value: string) { const newNames = [...groupNames]; newNames[index] = value; setGroupNames(newNames); }
 
   const selectedBank = banks.find(b => b.id === selected);
 
@@ -362,6 +261,24 @@ export default function HostHome() {
             <div><label className="block text-sm text-slate-400 mb-2">URL Logo Sekolah (Opsional)</label><input value={hostLogo} onChange={e => setHostLogo(e.target.value)} placeholder="https://..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 outline-none focus:border-brand-500 text-sm" /></div>
           </div>
           <div className="mt-4"><label className="block text-sm text-slate-400 mb-2">Pilih Avatar Guru</label><div className="flex flex-wrap gap-2">{AVATAR_OPTIONS.map(emoji => (<button key={emoji} onClick={() => setHostAvatar(emoji)} className={`text-3xl p-2 rounded-xl transition-all ${hostAvatar === emoji ? 'bg-brand-500/30 border-2 border-brand-500 scale-110' : 'bg-white/5 border border-white/10 hover:bg-white/10'}`}>{emoji}</button>))}</div></div>
+        </div>
+
+        {/* PEMILIH TEMA OBS */}
+        <div className="border-t border-white/10 pt-4">
+          <label className="block text-sm text-slate-400 mb-2">🎨 Tema Visual OBS</label>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {Object.entries(THEMES).map(([id, t]) => (
+              <button
+                key={id}
+                onClick={() => setTheme(id as ThemeId)}
+                className={`relative overflow-hidden rounded-xl border-2 p-3 text-left transition-all ${theme === id ? 'border-brand-500 scale-105 shadow-lg' : 'border-white/10 hover:border-white/30'}`}
+              >
+                <div className={`w-full h-10 rounded-lg mb-2 ${t.preview}`} />
+                <div className="text-xs font-semibold flex items-center gap-1">{t.icon} {t.name}</div>
+                {theme === id && <span className="absolute top-2 right-2 text-brand-500 font-bold">✓</span>}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-4">
@@ -436,55 +353,23 @@ export default function HostHome() {
         <button onClick={createSession} disabled={loading || !selected} className="btn-primary w-full">{loading ? 'Membuat sesi...' : 'Mulai Sesi Baru →'}</button>
       </div>
 
-      {/* ================= EDITOR MODAL ================= */}
+      {/* EDITOR MODAL */}
       {editingBank && (
         <div className="fixed inset-0 z-[150] bg-slate-950/95 backdrop-blur-md overflow-y-auto">
           <div className="max-w-3xl mx-auto px-4 py-6">
-            {/* Header Sticky */}
             <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur border border-brand-500/30 rounded-2xl p-4 mb-4 flex items-center justify-between gap-2">
-              <div className="flex-1">
-                <div className="text-xs uppercase text-brand-400 font-bold tracking-wider">✏️ Editor Soal</div>
-                <div className="text-lg font-bold truncate">{editingBank.name}</div>
-                <div className="text-xs text-slate-400">{editingBank.questions?.length || 0} soal</div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={closeEditor} className="btn-ghost text-sm px-3">Batal</button>
-                <button onClick={saveEditedBank} disabled={savingBank} className="btn-primary text-sm px-4">
-                  {savingBank ? 'Menyimpan...' : '💾 Simpan Semua'}
-                </button>
-              </div>
+              <div className="flex-1"><div className="text-xs uppercase text-brand-400 font-bold tracking-wider">✏️ Editor Soal</div><div className="text-lg font-bold truncate">{editingBank.name}</div><div className="text-xs text-slate-400">{editingBank.questions?.length || 0} soal</div></div>
+              <div className="flex gap-2"><button onClick={closeEditor} className="btn-ghost text-sm px-3">Batal</button><button onClick={saveEditedBank} disabled={savingBank} className="btn-primary text-sm px-4">{savingBank ? 'Menyimpan...' : '💾 Simpan Semua'}</button></div>
             </div>
-
-            {/* Meta Bank */}
             <div className="card mb-4 space-y-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Nama Bank Soal</label>
-                <input value={editingBank.name} onChange={e => updateBankMeta('name', e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 font-semibold" />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Mata Pelajaran</label>
-                <input value={editingBank.subject} onChange={e => updateBankMeta('subject', e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 text-sm" />
-              </div>
+              <div><label className="block text-xs text-slate-400 mb-1">Nama Bank Soal</label><input value={editingBank.name} onChange={e => updateBankMeta('name', e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 font-semibold" /></div>
+              <div><label className="block text-xs text-slate-400 mb-1">Mata Pelajaran</label><input value={editingBank.subject} onChange={e => updateBankMeta('subject', e.target.value)} className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 text-sm" /></div>
             </div>
-
-            {/* Question List */}
             <div className="space-y-4">
               {editingBank.questions?.map((q: any, qi: number) => (
                 <div key={q.id} className="card border-white/10">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="bg-brand-500/20 text-brand-400 font-bold px-3 py-1 rounded-lg text-sm">Soal {qi + 1}</span>
-                    </div>
-                    <button onClick={() => deleteQuestionFromEditor(qi)} className="text-rose-400 hover:text-rose-300 text-sm font-semibold px-2 py-1 rounded hover:bg-rose-500/10">
-                      🗑️ Hapus Soal
-                    </button>
-                  </div>
-
-                  <div className="mb-3">
-                    <label className="block text-xs text-slate-400 mb-1">Pertanyaan</label>
-                    <textarea value={q.text} onChange={e => updateQuestionField(qi, 'text', e.target.value)} placeholder="Tulis pertanyaan di sini..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 text-sm" rows={2} />
-                  </div>
-
+                  <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><span className="bg-brand-500/20 text-brand-400 font-bold px-3 py-1 rounded-lg text-sm">Soal {qi + 1}</span></div><button onClick={() => deleteQuestionFromEditor(qi)} className="text-rose-400 hover:text-rose-300 text-sm font-semibold px-2 py-1 rounded hover:bg-rose-500/10">🗑️ Hapus Soal</button></div>
+                  <div className="mb-3"><label className="block text-xs text-slate-400 mb-1">Pertanyaan</label><textarea value={q.text} onChange={e => updateQuestionField(qi, 'text', e.target.value)} placeholder="Tulis pertanyaan..." className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-2 outline-none focus:border-brand-500 text-sm" rows={2} /></div>
                   <div className="space-y-2 mb-3">
                     <label className="block text-xs text-slate-400 mb-1">Pilihan Jawaban (klik radio untuk tandai jawaban benar)</label>
                     {q.options.map((opt: string, oi: number) => {
@@ -499,33 +384,15 @@ export default function HostHome() {
                       );
                     })}
                   </div>
-
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">URL Gambar (opsional)</label>
-                      <input type="text" value={q.imageUrl || ''} onChange={e => updateQuestionField(qi, 'imageUrl', e.target.value || null)} placeholder="https://..." className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 outline-none focus:border-brand-500 text-xs" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Waktu (detik)</label>
-                      <input type="number" min={5} max={120} value={q.timeLimitSec || 20} onChange={e => updateQuestionField(qi, 'timeLimitSec', Number(e.target.value) || 20)} className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 outline-none focus:border-brand-500 text-xs" />
-                    </div>
+                    <div><label className="block text-xs text-slate-400 mb-1">URL Gambar (opsional)</label><input type="text" value={q.imageUrl || ''} onChange={e => updateQuestionField(qi, 'imageUrl', e.target.value || null)} placeholder="https://..." className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 outline-none focus:border-brand-500 text-xs" /></div>
+                    <div><label className="block text-xs text-slate-400 mb-1">Waktu (detik)</label><input type="number" min={5} max={120} value={q.timeLimitSec || 20} onChange={e => updateQuestionField(qi, 'timeLimitSec', Number(e.target.value) || 20)} className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 outline-none focus:border-brand-500 text-xs" /></div>
                   </div>
                 </div>
               ))}
             </div>
-
-            {/* Add Button */}
-            <button onClick={addQuestionToEditor} className="w-full mt-4 py-3 rounded-xl border-2 border-dashed border-brand-500/50 text-brand-400 hover:bg-brand-500/10 hover:border-brand-500 font-semibold transition">
-              + Tambah Soal Baru
-            </button>
-
-            {/* Bottom Actions */}
-            <div className="mt-6 mb-8 flex gap-2">
-              <button onClick={closeEditor} className="btn-ghost flex-1">Batal</button>
-              <button onClick={saveEditedBank} disabled={savingBank} className="btn-primary flex-1">
-                {savingBank ? 'Menyimpan...' : '💾 Simpan Semua Perubahan'}
-              </button>
-            </div>
+            <button onClick={addQuestionToEditor} className="w-full mt-4 py-3 rounded-xl border-2 border-dashed border-brand-500/50 text-brand-400 hover:bg-brand-500/10 hover:border-brand-500 font-semibold transition">+ Tambah Soal Baru</button>
+            <div className="mt-6 mb-8 flex gap-2"><button onClick={closeEditor} className="btn-ghost flex-1">Batal</button><button onClick={saveEditedBank} disabled={savingBank} className="btn-primary flex-1">{savingBank ? 'Menyimpan...' : '💾 Simpan Semua Perubahan'}</button></div>
           </div>
         </div>
       )}

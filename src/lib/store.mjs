@@ -48,7 +48,7 @@ class Store {
   }
   deleteBank(id) { this.banks.delete(id); }
 
-  createSession({ bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal = true, ttsEnabled = false, ttsSpeed = 1, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [], aiConfig = null, autoPlay = false, autoPlayDelaySec = 5 }) {
+  createSession({ bankId, hostName, hostAvatar, hostLogo, timeLimitSec, autoReveal = true, ttsEnabled = false, ttsSpeed = 1, groupMode = false, groupCount = 2, groupNames = ['Merah', 'Biru', 'Hijau', 'Kuning'], eliminationMode = false, bossQuestions = [], shuffleOptions = false, tournamentMode = false, expectedPlayers = 0, invitationCodes = [], aiConfig = null, autoPlay = false, autoPlayDelaySec = 5, theme = 'classic' }) {
     const bank = this.banks.get(bankId);
     if (!bank) throw new Error('Bank tidak ditemukan');
     const session = {
@@ -59,7 +59,7 @@ class Store {
       groupMode, groupCount, groupNames,
       eliminationMode, bossQuestions, shuffleOptions,
       tournamentMode, expectedPlayers, invitationCodes, aiConfig,
-      autoPlay, autoPlayDelaySec, isAutoPlaying: false,
+      autoPlay, autoPlayDelaySec, isAutoPlaying: false, theme,
       currentQuestionIndex: -1, questionState: 'idle',
       currentQ: null, questionStartAt: null, questionEndAt: null,
       isPaused: false, pauseStartAt: null,
@@ -353,7 +353,7 @@ class Store {
       for (const p of s.players.values()) { if (p.group && groupScores[p.group] !== undefined) groupScores[p.group] += p.score; }
     }
     return {
-      session: { id: s.id, pin: s.pin, hostName: s.hostName, hostAvatar: s.hostAvatar, hostLogo: s.hostLogo, status: s.status, questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex, totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal, ttsEnabled: s.ttsEnabled, ttsSpeed: s.ttsSpeed, autoPlay: s.autoPlay, isAutoPlaying: s.isAutoPlaying, autoPlayDelaySec: s.autoPlayDelaySec, groupMode: s.groupMode, groupCount: s.groupCount, groupNames: s.groupNames, groupScores: s.groupMode ? groupScores : null, eliminationMode: s.eliminationMode, tournamentMode: s.tournamentMode, expectedPlayers: s.expectedPlayers, isPaused: s.isPaused, pauseStartAt: s.pauseStartAt, isBossBattle, hasAiReview: !!s.aiConfig, questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now() },
+      session: { id: s.id, pin: s.pin, hostName: s.hostName, hostAvatar: s.hostAvatar, hostLogo: s.hostLogo, status: s.status, questionState: s.questionState, currentQuestionIndex: s.currentQuestionIndex, totalQuestions: bank.questions.length, bankName: bank.name, autoReveal: s.autoReveal, ttsEnabled: s.ttsEnabled, ttsSpeed: s.ttsSpeed, autoPlay: s.autoPlay, isAutoPlaying: s.isAutoPlaying, autoPlayDelaySec: s.autoPlayDelaySec, theme: s.theme, groupMode: s.groupMode, groupCount: s.groupCount, groupNames: s.groupNames, groupScores: s.groupMode ? groupScores : null, eliminationMode: s.eliminationMode, tournamentMode: s.tournamentMode, expectedPlayers: s.expectedPlayers, isPaused: s.isPaused, pauseStartAt: s.pauseStartAt, isBossBattle, hasAiReview: !!s.aiConfig, questionStartAt: s.questionStartAt, questionEndAt: s.questionEndAt, serverNow: Date.now() },
       question: q ? { id: q.id, text: q.text, options: q.options, timeLimitSec: q.timeLimitSec, correctIndex: revealCorrect, imageUrl: q.imageUrl } : null,
       leaderboard, allPlayers, answerStats, playerCount: s.players.size,
     };
