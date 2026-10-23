@@ -212,6 +212,7 @@ export default function HostHome() {
       <div className="mb-6 flex justify-between items-center flex-wrap gap-2">
         <Link href="/" className="text-sm text-slate-400 hover:text-white transition">← Kembali ke Beranda</Link>
         <div className="flex gap-3 items-center flex-wrap">
+          <Link href="/host/backup" className="text-sm text-emerald-300 hover:text-emerald-200 font-semibold">🛡️ Backup</Link>
           <Link href="/host/hall-of-fame" className="text-sm text-amber-300 hover:text-amber-200 font-semibold">🏆 Hall of Fame</Link>
           <Link href="/host/history" className="text-sm text-slate-300 hover:text-white font-semibold">📚 Riwayat</Link>
           <button onClick={() => { setShowAi(!showAi); setIsImporting(false); }} className="text-sm font-semibold text-purple-400 hover:text-purple-300">{showAi ? 'Tutup AI' : '🤖 Buat Soal AI'}</button>
@@ -220,6 +221,7 @@ export default function HostHome() {
       </div>
 
       <h1 className="text-3xl font-bold">Dashboard Guru</h1>
+      <div className="inline-flex items-center gap-1 text-xs bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-full border border-emerald-500/20 mt-1"><span>💾</span> Auto-Save Aktif</div>
       <p className="text-slate-400 mt-1">Pilih bank soal dan atur durasi kuis live.</p>
 
       {showAi && (
