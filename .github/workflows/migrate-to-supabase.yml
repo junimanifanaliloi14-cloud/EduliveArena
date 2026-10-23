@@ -1,0 +1,59 @@
+name: Migrate Banks to Supabase
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'migrations/banks-source.json'
+      - 'scripts/migrate-banks.mjs'
+      - 'scripts/verify-migration.mjs'
+  workflow_dispatch:
+    inputs:
+      skip_verification:
+        description: 'Skip verification step (not recommended)'
+        required: false
+        default: 'false'
+
+jobs:
+  migrate:
+    name: Migrate Banks to Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run migration
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/migrate-banks.mjs
+
+      - name: Verify migration
+        if: github.event.inputs.skip_verification != 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/verify-migration.mjs
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 📊 Migration Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source:** \`migrations/banks-source.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY

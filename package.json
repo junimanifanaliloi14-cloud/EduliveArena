@@ -6,9 +6,12 @@
     "dev": "node server.mjs",
     "build": "next build",
     "start": "NODE_ENV=production node server.mjs",
-    "lint": "next lint"
+    "lint": "next lint",
+    "migrate:local": "node --env-file=.env.migration scripts/migrate-banks.mjs",
+    "verify:local": "node --env-file=.env.migration scripts/verify-migration.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^14.4.0",
     "html-to-image": "^1.11.13",

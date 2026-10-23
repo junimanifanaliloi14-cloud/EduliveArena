@@ -1,0 +1,109 @@
+[
+  {
+    "id": "bank_demo_1",
+    "name": "Matematika Dasar - Operasi Bilangan",
+    "subject": "Matematika",
+    "createdAt": 1792718770499,
+    "questions": [
+      {
+        "id": "q1",
+        "text": "Berapakah hasil dari 7 x 8?",
+        "options": [
+          "54",
+          "56",
+          "58",
+          "64"
+        ],
+        "correctIndex": 1,
+        "timeLimitSec": 20,
+        "imageUrl": null
+      },
+      {
+        "id": "q2",
+        "text": "Hasil dari 144 / 12 adalah...",
+        "options": [
+          "10",
+          "11",
+          "12",
+          "14"
+        ],
+        "correctIndex": 2,
+        "timeLimitSec": 20,
+        "imageUrl": null
+      },
+      {
+        "id": "q3",
+        "text": "Manakah bilangan prima?",
+        "options": [
+          "21",
+          "27",
+          "29",
+          "33"
+        ],
+        "correctIndex": 2,
+        "timeLimitSec": 20,
+        "imageUrl": null
+      },
+      {
+        "id": "q4",
+        "text": "Hasil dari 15 + 27 - 8 =",
+        "options": [
+          "32",
+          "34",
+          "36",
+          "38"
+        ],
+        "correctIndex": 1,
+        "timeLimitSec": 20,
+        "imageUrl": null
+      },
+      {
+        "id": "q5",
+        "text": "FPB dari 12 dan 18 adalah...",
+        "options": [
+          "2",
+          "3",
+          "6",
+          "9"
+        ],
+        "correctIndex": 2,
+        "timeLimitSec": 25,
+        "imageUrl": null
+      }
+    ]
+  },
+  {
+    "id": "bank_zv9sk1az",
+    "name": "Bank Soal Import - 23/10/2026",
+    "subject": "Umum",
+    "questions": [
+      {
+        "id": "q_1",
+        "text": "Berapakah hasil dari 5 x 5?",
+        "options": [
+          "10",
+          "20",
+          "25",
+          "30"
+        ],
+        "correctIndex": 2,
+        "timeLimitSec": 20,
+        "imageUrl": null
+      },
+      {
+        "id": "q_2",
+        "text": "Siapa tokoh pada gambar ini?",
+        "options": [
+          "Ir. Soekarno",
+          "Moh. Hatta",
+          "Soeharto",
+          "BJ Habibie"
+        ],
+        "correctIndex": 0,
+        "timeLimitSec": 30,
+        "imageUrl": "https://drive.google.com/file/d/1dbVLYhRJeuArVzKylUMZVzKn1SYLOixB/view?usp=drivesdk"
+      }
+    ],
+    "createdAt": 1792720816616
+  }
+]
