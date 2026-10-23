@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { store } from '@/lib/store.mjs';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
-  return NextResponse.json({ banks: store.listBanks() });
+  const banks = await store.listBanks();
+  return NextResponse.json({ banks });
 }
 
 export async function POST(req: Request) {
