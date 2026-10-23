@@ -51,6 +51,14 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     if (report && !savedToHallOfFame) {
       addSessionToHallOfFame(report.players);
+      // Sync ke server agar bisa diakses dari device lain
+      fetch('/api/hall-of-fame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ players: report.players }),
+      }).then(r => r.json()).then(d => {
+        if (d.ok) console.log('[HoF Sync]', d.updated, 'entries synced to server');
+      }).catch(e => console.warn('[HoF Sync] Failed:', e));
       setSavedToHallOfFame(true);
     }
   }, [report, savedToHallOfFame]);
