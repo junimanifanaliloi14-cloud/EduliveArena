@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { THEMES, ThemeId } from '@/lib/themes';
+import { PracticeCodeManager } from '@/components/PracticeCodeManager';
 
 interface Bank { 
   id: string; name: string; subject: string; questionCount: number;
@@ -356,6 +357,10 @@ export default function HostHome() {
       </div>
 
       {/* EDITOR MODAL */}
+      <div className="mt-6">
+        <PracticeCodeManager />
+      </div>
+
       {editingBank && (
         <div className="fixed inset-0 z-[150] bg-slate-950/95 backdrop-blur-md overflow-y-auto">
           <div className="max-w-3xl mx-auto px-4 py-6">
