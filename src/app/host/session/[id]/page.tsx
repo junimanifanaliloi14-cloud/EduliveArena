@@ -24,10 +24,11 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
   const [isDownloadingAllReports, setIsDownloadingAllReports] = useState(false);
   const [certProgress, setCertProgress] = useState(0);
   const [reportProgress, setReportProgress] = useState(0);
-  const [downloadingType, setDownloadingType] = useState<'cert' | 'report' | null>(null);
+  const [downloadingType, setDownloadingType] = useState<'cert' | 'report' | 'wa' | null>(null);
   const [downloadingPlayerId, setDownloadingPlayerId] = useState<string | null>(null);
   const [savedToHistory, setSavedToHistory] = useState(false);
   const [savedToHallOfFame, setSavedToHallOfFame] = useState(false);
+  const [waModal, setWaModal] = useState<{ player: any; rank: number; message: string; dataUrl: string } | null>(null);
 
   async function action(a: string) {
     setBusy(a);
@@ -49,8 +50,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
 
   useEffect(() => {
     if (report && !savedToHallOfFame) {
-      const result = addSessionToHallOfFame(report.players);
-      console.log('[Hall of Fame] Saved:', result);
+      addSessionToHallOfFame(report.players);
       setSavedToHallOfFame(true);
     }
   }, [report, savedToHallOfFame]);
@@ -59,6 +59,7 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     if (!ref.current) throw new Error('Element ref belum siap');
     return await toPng(ref.current, { cacheBust: true, pixelRatio: 2, skipFonts: true });
   }
+
   async function downloadSingle(player: any, rank: number, type: 'cert' | 'report') {
     if (!state) return;
     setDownloadingPlayerId(player.id); setDownloadingType(type); setCurrentPlayer(player); setCurrentRank(rank);
@@ -72,10 +73,54 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
     } catch (e) { alert('Gagal: ' + (e as Error).message); }
     setDownloadingPlayerId(null); setDownloadingType(null);
   }
+
+  // ============ WHATSAPP SHARE ============
+  function buildWAMessage(player: any, rank: number): string {
+    if (!report) return '';
+    const grade = player.accuracy >= 90 ? 'A (Sangat Baik)' : player.accuracy >= 75 ? 'B (Baik)' : player.accuracy >= 60 ? 'C (Cukup)' : 'D (Perlu Latihan)';
+    const note = player.accuracy >= 75
+      ? `${player.name} menunjukkan pemahaman yang sangat baik. Terus pertahankan semangat belajarnya!`
+      : player.accuracy >= 60
+      ? `${player.name} sudah berusaha dengan baik. Mari kita latih kembali materi yang masih sulit bersama-sama.`
+      : `${player.name} masih perlu banyak berlatih. Jangan menyerah, setiap usaha pasti membuahkan hasil!`;
+    const badgesLine = player.badges && player.badges.length > 0 ? `\n🏅 Pencapaian: ${player.badges.map((b: any) => b.label).join(', ')}\n` : '';
+    return `Halo Bapak/Ibu Orang Tua dari *${player.name}*,\n\nBerikut laporan hasil belajar dari kuis *"${report.bankName}"*:\n\n🏆 Peringkat: *#${rank}* dari ${report.players.length} siswa\n⭐ Total Skor: *${player.score} poin*\n🎯 Akurasi: *${player.accuracy}%*\n📝 Predikat: *${grade}*${badgesLine}\n💬 Catatan Guru: "${note}"\n\n_Laporan dibuat otomatis oleh EduLive Arena_ 🎓`;
+  }
+
+  async function shareToWhatsApp(player: any, rank: number) {
+    if (!state || !report) return;
+    setDownloadingPlayerId(player.id);
+    setDownloadingType('wa');
+    setCurrentPlayer(player);
+    setCurrentRank(rank);
+    
+    try {
+      await new Promise(r => setTimeout(r, 400));
+      const dataUrl = await captureElement(reportRef);
+      const message = buildWAMessage(player, rank);
+      
+      // Coba native share (mobile)
+      const fileName = `Rapor_${rank}_${player.name.replace(/\s+/g, '_')}.png`;
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], fileName, { type: 'image/png' });
+      
+      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Rapor ${player.name}`, text: message });
+      } else {
+        // Fallback: tampilkan modal untuk desktop
+        setWaModal({ player, rank, message, dataUrl });
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') alert('Gagal share: ' + e.message);
+    }
+    setDownloadingPlayerId(null);
+    setDownloadingType(null);
+  }
+
   async function downloadAll(type: 'cert' | 'report') {
     if (!report || !state) return;
     if (type === 'cert') { setIsDownloadingAllCerts(true); setCertProgress(0); } else { setIsDownloadingAllReports(true); setReportProgress(0); }
-    setDownloadingType(type);
     const zip = new JSZip();
     const total = report.players.length;
     try {
@@ -100,8 +145,9 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       link.click();
     } catch (e) { alert('Gagal membuat ZIP: ' + (e as Error).message); }
     if (type === 'cert') setIsDownloadingAllCerts(false); else setIsDownloadingAllReports(false);
-    setDownloadingType(null); setCurrentPlayer(null);
+    setCurrentPlayer(null);
   }
+
   function playSound(url: string) { if (socket && state) socket.emit('host:sound', { sessionId: state.session.id, soundUrl: url }); }
   async function triggerMockGift() {
     if (!state) return;
@@ -164,11 +210,10 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
           <div className="flex items-center gap-2 flex-wrap">
             <span className={'h-2.5 w-2.5 rounded-full ' + (connected ? 'bg-emerald-400' : 'bg-red-500')} />
             <span className="text-xs uppercase tracking-wider text-slate-400">{s.status} - {s.questionState} {s.isPaused && '(PAUSED)'}</span>
-            {s.isAutoPlaying && <span className="text-xs bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-500/30 animate-pulse">🤖 Auto-Play AKTIF</span>}
+            {s.isAutoPlaying && <span className="text-xs bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-500/30 animate-pulse">🤖 Auto-Play</span>}
             {s.eliminationMode && <span className="text-xs bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/30">Eliminasi</span>}
             {s.tournamentMode && <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">🏆 Turnamen</span>}
             {savedToHistory && <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">💾 Tersimpan</span>}
-            {savedToHallOfFame && <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">🏆 Hall of Fame</span>}
           </div>
           <h1 className="text-2xl font-bold mt-1">{s.bankName}</h1>
           <p className="text-slate-400 text-sm">{s.hostName} - {state.playerCount} murid</p>
@@ -206,40 +251,14 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
       <section className="card">
         <h2 className="font-semibold mb-3">Kontrol Utama</h2>
         <div className="flex flex-wrap gap-2 items-center">
-          {s.status === 'lobby' && (
-            <>
-              <button onClick={() => action('start')} disabled={!!busy} className="btn-primary">
-                {busy === 'start' ? 'Memulai...' : s.autoPlay ? '▶️ Mulai Sesi + Auto-Play' : 'Mulai Sesi'}
-              </button>
-              {s.tournamentMode && <div className="text-sm text-amber-400 font-bold ml-2">Ready: {readyCount} / {state.allPlayers.length}</div>}
-            </>
-          )}
-          {s.isAutoPlaying && (
-            <button onClick={() => action('stop-autoplay')} disabled={!!busy} className="btn-primary bg-rose-600 hover:bg-rose-700">
-              {busy === 'stop-autoplay' ? '...' : '⏹ Stop Auto-Play'}
-            </button>
-          )}
-          {!s.isAutoPlaying && (s.status === 'live' || s.status === 'lobby') && s.questionState === 'idle' && (
-            <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : s.currentQuestionIndex < 0 ? 'Tampilkan Soal 1' : 'Soal Berikutnya ->'}</button>
-          )}
-          {!s.isAutoPlaying && s.questionState === 'showing' && (
-            <>
-              <button onClick={() => action('reveal')} disabled={!!busy} className="btn-ghost">{busy === 'reveal' ? '...' : 'Buka Jawaban'}</button>
-              <button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>{s.isPaused ? '▶ Lanjut' : '⏸ Jeda'}</button>
-            </>
-          )}
-          {!s.isAutoPlaying && s.questionState === 'revealed' && s.currentQuestionIndex + 1 < s.totalQuestions && (
-            <button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : 'Soal Berikutnya ->'}</button>
-          )}
-          {!s.isAutoPlaying && s.questionState === 'revealed' && s.currentQuestionIndex + 1 >= s.totalQuestions && s.status !== 'ended' && (
-            <button onClick={() => action('end')} disabled={!!busy} className="btn-danger">{busy === 'end' ? '...' : 'Akhiri Sesi'}</button>
-          )}
-          {s.isAutoPlaying && s.questionState === 'showing' && (
-            <button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>{s.isPaused ? '▶ Lanjut' : '⏸ Jeda'}</button>
-          )}
-          <div className="border-l border-white/20 pl-2 ml-2">
-            <button onClick={triggerMockGift} className="btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30 text-sm">🎁 Test Gift</button>
-          </div>
+          {s.status === 'lobby' && (<><button onClick={() => action('start')} disabled={!!busy} className="btn-primary">{busy === 'start' ? 'Memulai...' : s.autoPlay ? '▶️ Mulai + Auto-Play' : 'Mulai Sesi'}</button>{s.tournamentMode && <div className="text-sm text-amber-400 font-bold ml-2">Ready: {readyCount} / {state.allPlayers.length}</div>}</>)}
+          {s.isAutoPlaying && (<button onClick={() => action('stop-autoplay')} disabled={!!busy} className="btn-primary bg-rose-600 hover:bg-rose-700">{busy === 'stop-autoplay' ? '...' : '⏹ Stop Auto-Play'}</button>)}
+          {!s.isAutoPlaying && (s.status === 'live' || s.status === 'lobby') && s.questionState === 'idle' && (<button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : s.currentQuestionIndex < 0 ? 'Tampilkan Soal 1' : 'Soal Berikutnya ->'}</button>)}
+          {!s.isAutoPlaying && s.questionState === 'showing' && (<><button onClick={() => action('reveal')} disabled={!!busy} className="btn-ghost">{busy === 'reveal' ? '...' : 'Buka Jawaban'}</button><button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>{s.isPaused ? '▶ Lanjut' : '⏸ Jeda'}</button></>)}
+          {!s.isAutoPlaying && s.questionState === 'revealed' && s.currentQuestionIndex + 1 < s.totalQuestions && (<button onClick={() => action('next')} disabled={!!busy} className="btn-primary">{busy === 'next' ? '...' : 'Soal Berikutnya ->'}</button>)}
+          {!s.isAutoPlaying && s.questionState === 'revealed' && s.currentQuestionIndex + 1 >= s.totalQuestions && s.status !== 'ended' && (<button onClick={() => action('end')} disabled={!!busy} className="btn-danger">{busy === 'end' ? '...' : 'Akhiri Sesi'}</button>)}
+          {s.isAutoPlaying && s.questionState === 'showing' && (<button onClick={() => action(s.isPaused ? 'resume' : 'pause')} disabled={!!busy} className={s.isPaused ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30'}>{s.isPaused ? '▶ Lanjut' : '⏸ Jeda'}</button>)}
+          <div className="border-l border-white/20 pl-2 ml-2"><button onClick={triggerMockGift} className="btn-ghost bg-amber-500/20 text-amber-300 border border-amber-500/30 text-sm">🎁 Test Gift</button></div>
         </div>
       </section>
 
@@ -277,9 +296,17 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
               <button onClick={() => downloadAll('cert')} disabled={isDownloadingAllCerts} className="btn-primary bg-gradient-to-r from-amber-500 to-orange-600 text-sm px-3 disabled:opacity-50">{isDownloadingAllCerts ? `📜 ${certProgress}/${report.players.length}...` : '📜 Semua Sertifikat (ZIP)'}</button>
             </div>
           </div>
+          
+          <div className="mb-4 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+            <div className="text-xs text-emerald-300 flex items-center gap-2">
+              <span className="text-lg">📱</span>
+              <span><b>Tips:</b> Klik tombol 📱 di setiap baris untuk kirim rapor langsung ke WhatsApp orang tua.</span>
+            </div>
+          </div>
+
           <div className="overflow-x-auto mb-8">
             <table className="w-full text-sm">
-              <thead className="text-slate-400 border-b border-white/10"><tr><th className="text-left py-2">#</th><th className="text-left">Nama</th>{report.groupMode && <th className="text-left">Grup</th>}<th className="text-left">Pencapaian</th><th className="text-right">Skor</th><th className="text-right">Akurasi</th><th className="text-center">Unduh</th></tr></thead>
+              <thead className="text-slate-400 border-b border-white/10"><tr><th className="text-left py-2">#</th><th className="text-left">Nama</th>{report.groupMode && <th className="text-left">Grup</th>}<th className="text-left">Pencapaian</th><th className="text-right">Skor</th><th className="text-right">Akurasi</th><th className="text-center">Aksi</th></tr></thead>
               <tbody>
                 {report.players.map((p: any, i: number) => (
                   <tr key={p.id} className="border-b border-white/5">
@@ -289,8 +316,9 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
                     <td className="text-right font-mono">{p.score}</td><td className="text-right">{p.accuracy}%</td>
                     <td className="text-center">
                       <div className="flex gap-1 justify-center">
-                        <button onClick={() => downloadSingle(p, i + 1, 'report')} disabled={downloadingPlayerId === p.id || isDownloadingAllReports || isDownloadingAllCerts} className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition disabled:opacity-50" title="Rapor">{downloadingPlayerId === p.id && downloadingType === 'report' ? '⏳' : '📄'}</button>
-                        <button onClick={() => downloadSingle(p, i + 1, 'cert')} disabled={downloadingPlayerId === p.id || isDownloadingAllReports || isDownloadingAllCerts} className="p-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition disabled:opacity-50" title="Sertifikat">{downloadingPlayerId === p.id && downloadingType === 'cert' ? '⏳' : '📜'}</button>
+                        <button onClick={() => shareToWhatsApp(p, i + 1)} disabled={downloadingPlayerId === p.id || isDownloadingAllReports || isDownloadingAllCerts} className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition disabled:opacity-50" title="Kirim ke WhatsApp">{downloadingPlayerId === p.id && downloadingType === 'wa' ? '⏳' : '📱'}</button>
+                        <button onClick={() => downloadSingle(p, i + 1, 'report')} disabled={downloadingPlayerId === p.id || isDownloadingAllReports || isDownloadingAllCerts} className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition disabled:opacity-50" title="Unduh Rapor">{downloadingPlayerId === p.id && downloadingType === 'report' ? '⏳' : '📄'}</button>
+                        <button onClick={() => downloadSingle(p, i + 1, 'cert')} disabled={downloadingPlayerId === p.id || isDownloadingAllReports || isDownloadingAllCerts} className="p-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition disabled:opacity-50" title="Unduh Sertifikat">{downloadingPlayerId === p.id && downloadingType === 'cert' ? '⏳' : '📜'}</button>
                       </div>
                     </td>
                   </tr>
@@ -299,6 +327,49 @@ export default function ControlPanel({ params }: { params: Promise<{ id: string 
             </table>
           </div>
         </section>
+      )}
+
+      {/* WA MODAL (Desktop Fallback) */}
+      {waModal && (
+        <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-2xl border border-emerald-500/30 max-w-lg w-full overflow-hidden animate-pop">
+            <div className="bg-gradient-to-r from-emerald-600 to-green-600 p-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">📱 Kirim ke WhatsApp</h3>
+              <p className="text-emerald-100 text-xs mt-1">Rapor untuk: <b>{waModal.player.name}</b></p>
+            </div>
+            <div className="p-4">
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mb-4">
+                <div className="text-xs text-emerald-300 font-semibold mb-1">📋 Preview Pesan:</div>
+                <div className="text-sm text-slate-200 whitespace-pre-wrap font-mono text-xs leading-relaxed max-h-48 overflow-y-auto">{waModal.message}</div>
+              </div>
+              <div className="space-y-2">
+                <button 
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = waModal.dataUrl;
+                    link.download = `Rapor_${waModal.rank}_${waModal.player.name.replace(/\s+/g, '_')}.png`;
+                    link.click();
+                  }}
+                  className="w-full btn-primary bg-indigo-600 hover:bg-indigo-700"
+                >
+                  📥 1. Download Gambar Rapor
+                </button>
+                <button 
+                  onClick={() => {
+                    window.open(`https://wa.me/?text=${encodeURIComponent(waModal.message)}`, '_blank');
+                  }}
+                  className="w-full btn-primary bg-emerald-600 hover:bg-emerald-700"
+                >
+                  📱 2. Buka WhatsApp Web
+                </button>
+              </div>
+              <div className="mt-3 text-xs text-slate-400 text-center">
+                💡 Setelah WA terbuka, drag-and-drop gambar rapor yang sudah diunduh ke chat.
+              </div>
+              <button onClick={() => setWaModal(null)} className="w-full mt-3 text-sm text-slate-400 hover:text-white">Tutup</button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );
